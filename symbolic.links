@@ -1,0 +1,8 @@
+ln -s ./dotfiles/.bash_history .bash_history
+ln -s ./dotfiles/.bashrc .bashrc
+ln -s ./dotfiles/.profile .profile
+ln -s ./dotfiles/.viminfo .viminfo
+ln -s ./dotfiles/.vimrc .vimrc
+ln -s ./dotfiles/.bash_aliases .bash_aliases
+ln -s /mnt/c/Users/ahmet/iCloudDrive/27N4MQEA55~pro~writer iAwriter
+
