@@ -1,0 +1,34 @@
+{
+  "schemes" : [
+    {
+      "if" : {
+        "device" : {
+          "vendorID" : "0x1bcf",
+          "productID" : "0x8a0",
+          "category" : "mouse"
+        }
+      },
+      "buttons" : {
+        "mappings" : [
+          {
+            "control" : false,
+            "button" : 3,
+            "command" : false,
+            "shift" : false,
+            "option" : false,
+            "action" : "mouse.button.forward"
+          },
+          {
+            "command" : false,
+            "control" : false,
+            "action" : "mouse.button.back",
+            "option" : false,
+            "shift" : false,
+            "button" : 4
+          }
+        ]
+      }
+    }
+  ],
+  "$schema" : "https:\/\/schema.linearmouse.app\/0.10.0"
+}

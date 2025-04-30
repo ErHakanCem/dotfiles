@@ -1,0 +1,9 @@
+*.log
+*.swp
+.DS_Store
+.gh/hosts.yml
+.zsh_history
+.zsh_sessions/
+*.local
+*.private
+
