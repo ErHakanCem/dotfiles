@@ -1,0 +1,7 @@
+[manager]
+prepend_keymap = [
+	{on   = "T", run  = "plugin toggle-pane min-parent", desc = "Show or hide the parent pane"},
+	{on   = "N", run  = "plugin toggle-pane max-preview", desc = "maximize or restore the preview pane"},
+]
+
+

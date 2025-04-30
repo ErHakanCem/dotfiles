@@ -1,0 +1,43 @@
+[preview]
+# Show image previews using chafa
+image = { enable = true, method = "chafa" }
+# Change them to your desired values
+max_width  = 2000
+max_height = 1000
+[preview.chafa]
+# Configure chafa to generate good image previews
+scale = 1
+size.width = 12
+size.height = 8
+colors.mode = "8"
+
+[manager]
+# Layout configuration 
+ratio = [2, 2, 4] 
+
+# Default opener configurations
+[opener]
+play = [
+	{ run = 'mpv "$@"', orphan = true, for = "unix" },
+	{ run = '"C:\Program Files\mpv.exe" %*', orphan = true, for = "windows" }
+]
+edit = [
+	{ run = '$EDITOR "$@"', block = true, for = "unix" },
+	{ run = "%EDITOR% %*",  block = true, for = "windows" },
+]
+open = [
+{ run = 'open "$@"',  desc = "Open with system default application", for = "macos"}
+]
+
+[plugin]
+append_previewers = []
+# If necessary, you can extend preview capabilities with additional plugins
+prepend_previewers = [
+ { mime = "audio/*", run = "audio-preview" }, 
+ { name = "*.md", run = "glow" },
+]
+prepend_preloaders = [ 
+ { mime = "audio/*", run = "audio-preview" }, 
+]
+
+
