@@ -1,7 +1,8 @@
 [manager]
 prepend_keymap = [
-	{on   = "T", run  = "plugin toggle-pane min-parent", desc = "Show or hide the parent pane"},
-	{on   = "N", run  = "plugin toggle-pane max-preview", desc = "maximize or restore the preview pane"},
+    {on = "T", run = "plugin toggle-pane min-parent", desc = "Show or hide the parent pane"},
+    {on = "N", run = "plugin toggle-pane max-preview", desc = "maximize or restore the preview pane"},
+    {on = "<space>", run = "plugin mactag peek", desc = "Quick Look the current file"},
+    {on = ["b", "a"], run = "plugin mactag add", desc = "Tag selected files"},
+    {on = ["b", "r"], run = "plugin mactag remove", desc = "Untag selected files"}
 ]
-
-

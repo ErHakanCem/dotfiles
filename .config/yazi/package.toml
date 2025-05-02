@@ -8,6 +8,11 @@ use = "yazi-rs/plugins:toggle-pane"
 rev = "864a021"
 hash = "f3853bbdd1da2fad09d059ab5464abfd"
 
+[[plugin.deps]]
+use = "yazi-rs/plugins:mactag"
+rev = "864a021"
+hash = "f3853bbdd1da2fad09d059ab5464abfd"
+
 [[flavor.deps]]
 use = "PinThePenguinOne/sunset"
 rev = "64ad82e"

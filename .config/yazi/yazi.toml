@@ -30,6 +30,16 @@ open = [
 ]
 
 [plugin]
+[[plugin.prepend_fetchers]]
+id   = "mactag"
+name = "*"
+run  = "mactag"
+
+[[plugin.prepend_fetchers]]
+id   = "mactag"
+name = "*/"
+run  = "mactag"
+
 append_previewers = []
 # If necessary, you can extend preview capabilities with additional plugins
 prepend_previewers = [
