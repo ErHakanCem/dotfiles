@@ -1,0 +1,70 @@
+snippet prop-note 
+type: ${1: Notes}
+note-kind: ${2: simple}
+state: ${3: idea}
+source: ${4: thought}
+status: ${5: fleeting-Note}
+
+endsnippet
+
+
+snippet ncard
+---
+subject: ${1:}
+type: ${2:}
+book: ${3:}
+status: ${4:}
+state: ${5:}
+source: ${6:}
+
+---
+endsnippet
+
+# Test snippet
+snippet test "Test Snippet" b
+This is a test snippet
+endsnippet
+
+# Simple book template
+snippet bookz "Simple Book Template" b
+Title: ${1:Book Title}
+Author: ${2:Author Name}
+Year: ${3:Year}
+ISBN: ${4:ISBN Number}
+endsnippet
+
+# Detailed book template
+
+# ${1:Author}, ${2:Book Title},**P**: ${3:Page }
+
+snippet bookn "Detailed Book Note Template" b
+
+Wu Hsin, Behind The Mind,**P**: ${3:Page }
+''
+${4:Detailed notes}
+
+**Topic**: ${5:}
+**Tags**: ${6:}
+**Index Id** ${7:}
+
+Key Takeaways, Reflections
+- ${7: }
+endsnippet
+
+
+# Timestamp for file names and references
+snippet ts "Timestamp (YYYYMMDD.HHMMSS)" w
+`!v strftime("%Y%m%d.%H%M%S")`
+endsnippet
+
+# Full timestamp note template
+snippet tsn "Timestamp Note Template" b
+# `!v strftime("%Y%m%d.%H%M%S")`
+
+Created: `!v strftime("%Y-%m-%d %H:%M:%S")`
+Tags: ${1:tags}
+
+---
+
+${0}
+endsnippet

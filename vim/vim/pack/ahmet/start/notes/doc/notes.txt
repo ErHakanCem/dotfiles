@@ -1,0 +1,130 @@
+*notes.txt*   Note-taking plugin with timestamp IDs and FZF search
+
+INTRODUCTION                                                    *notes*
+    This plugin provides a simple note-taking workflow inside Vim.
+    It lets you quickly create new notes, link between them using
+    [[link syntax | Title]], and search notes using fzf.vim.
+
+    Notes are saved with timestamp-based filenames using the format:
+
+        YYYYMMDD.HHMMSS.md
+        Example: 20251016.145512.md
+
+    The note title (first line) becomes the searchable header.
+
+--------------------------------------------------------------------------
+CONTENTS
+    1. Creating a New Note ................. |notes-new|
+    2. Linking Selected Text ............... |notes-make-new-note|
+    3. Inserting Links with [[ ............. |notes-link|
+    4. Searching Notes (FZF) ............... |notes-search|
+    5. Internal Functions .................. |notes-functions|
+
+--------------------------------------------------------------------------
+
+1. CREATING A NEW NOTE                                        *notes-new*
+    The command for generating a new note file is built into:
+
+        notes#new({title})
+
+    It creates a new file named:
+
+        {timestamp}.md
+
+    The note automatically starts with:
+
+        # {title}
+
+    Example flow (triggered by plugin mapping):
+
+        Visually select text
+        Run :call notes#make_new_note()
+        → Creates a note file
+        → Inserts link into original buffer
+
+--------------------------------------------------------------------------
+
+2. CREATE & LINK A NOTE FROM VISUAL SELECTION    *notes-make-new-note*
+    The function:
+
+        notes#make_new_note()
+
+    Performs the following steps:
+
+      1. Takes visually selected text
+      2. Creates a new note named using the selected text
+      3. Generates an ID using timestamp
+      4. Inserts a link in the original file:
+
+            [[20251016.145512 | Selected text]]
+
+    This is the main mapping for creating new notes from selected text.
+
+--------------------------------------------------------------------------
+
+3. INSERTING LINKS WITH [[ IN INSERT MODE                   *notes-link*
+    Typing `[[` in insert mode triggers a search-and-insert link flow:
+
+        1. User types [[
+        2. Plugin enters link search mode automatically
+        3. User selects a note from popup
+        4. Plugin inserts:
+
+            [[ID | Note Title]]
+
+    The mapping that triggers link search is:
+
+        inoremap <Plug>(notes-search-note) <C-o>:call notes#search_note()<CR>
+
+    The link handler updates the current line and re-enters insert mode.
+
+--------------------------------------------------------------------------
+
+4. SEARCHING NOTES WITH FZF                            *notes-search*
+    The function:
+
+        notes#search_note()
+
+    Opens an fzf window searching for all note titles:
+
+        ^# <title>
+
+    After selecting an entry, the plugin extracts:
+
+        - filename (ID)
+        - title
+        - cursor position
+        - selected line/column
+
+    And inserts the appropriate link into the current buffer.
+
+    The search uses:
+
+        call fzf#vim#ag('^# ', '', {'sink': function('notes#link_handler')})
+
+--------------------------------------------------------------------------
+
+5. INTERNAL FUNCTIONS                                 *notes-functions*
+
+    notes#new({title})
+        Creates a new note with timestamp ID and inserts the title.
+
+    notes#make_link({id}, {title})
+        Returns the link representation:
+
+            [[id | title]]
+
+    notes#link_handler({fzf_result})
+        Handles inserting a link after selecting from the FZF window.
+
+    notes#link()
+        Prepares buffer position and triggers note search.
+
+--------------------------------------------------------------------------
+
+AUTHOR
+    Generated documentation for your custom notes plugin.
+
+COPYRIGHT
+    You may modify, extend, or distribute freely.
+

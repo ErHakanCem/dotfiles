@@ -1,0 +1,9 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhistcnt =7
+let g:netrw_dirhist_7='/Users/ahmetomay/.vim/pack/ahmet/start'
+let g:netrw_dirhist_6='/Users/ahmetomay/Desktop/book-pdf/Photos-1-001'
+let g:netrw_dirhist_5='/Volumes/seagate2T/fromToshiba/tif'
+let g:netrw_dirhist_4='/Users/ahmetomay/.vim/pack/ahmet/start/notes/autoload'
+let g:netrw_dirhist_3='/Users/ahmetomay/my-self/01-doing/writing/quick-notes'
+let g:netrw_dirhist_2='/Users/ahmetomay/my-self/01-doing/writing/notes/notes-dailies'
+let g:netrw_dirhist_1='/Users/ahmetomay/my-self/01-doing/writing/quick-notes'

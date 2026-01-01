@@ -1,0 +1,91 @@
+import os
+import re
+import hashlib
+
+INPUT_DIR = "."
+OUTPUT_DIR = "./"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def make_id(text, fallback_source):
+    """Extract id number; fallback -> hash from source filename"""
+    match = re.search(r"id\s*:\s*([0-9]+)", text)
+    if match:
+        return match.group(1)
+    return hashlib.md5(fallback_source.encode()).hexdigest()[:10]
+
+
+def extract_value(label, text):
+    """Extracts values like key: value"""
+    pattern = rf"{label}\s*:\s*(.+)"
+    match = re.search(pattern, text)
+    if match:
+        val = match.group(1).strip()
+        return val.replace(",", "").strip()
+    return ""
+
+
+def extract_content(text):
+    """Extract everything after content: if exists"""
+    idx = text.find("content:")
+    if idx == -1:
+        return text.strip()
+    return text[idx + len("content:"):].strip()
+
+
+def process_file(filepath):
+    filename_raw = os.path.basename(filepath)
+
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        raw = f.read()
+
+    # Try to get real ID
+    id_ = make_id(raw, filename_raw)
+
+    original_file = extract_value("original_file", raw)
+    content = extract_content(raw)
+
+    # Safe filename
+    md_filename = f"unknown-{id_}.md".replace(" ", "-")
+    output_path = os.path.join(OUTPUT_DIR, md_filename)
+
+    with open(output_path, "w", encoding="utf-8") as out:
+        out.write("---\n")
+        out.write(f"id: {id_}\n")
+        out.write("category: unknown\n")
+        out.write("tag: unknown\n")
+        out.write("sub_topic: unknown\n")
+        out.write("keywords: []\n")
+        out.write(f"original_file: {original_file}\n")
+        out.write("---\n\n")
+
+        out.write("# Note\n\n")
+        out.write(content + "\n")
+
+    print(f"✔ Created fallback → {md_filename}")
+
+
+def main():
+    count = 0
+    for filename in os.listdir(INPUT_DIR):
+        if not filename.endswith(".json"):
+            continue
+
+        full_path = os.path.join(INPUT_DIR, filename)
+
+        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+            raw = f.read()
+
+        # Skip files that have real structured JSON
+        if "```json" in raw or '"category"' in raw:
+            continue
+
+        process_file(full_path)
+        count += 1
+
+    print(f"\n🏁 Done! Created {count} fallback markdown files\n")
+
+
+if __name__ == "__main__":
+    main()
+

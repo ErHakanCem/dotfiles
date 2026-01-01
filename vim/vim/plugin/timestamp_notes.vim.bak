@@ -1,0 +1,117 @@
+" timestamp_notes.vim - Timestamp-based note creation
+" Author: Created for ahmetomay
+" Last Change: 2025-05-26
+
+if exists("g:loaded_timestamp_notes")
+  finish
+endif
+let g:loaded_timestamp_notes = 1
+
+" Generate timestamp filename
+function! s:GenerateTimestampFilename()
+  return strftime("%Y%m%d.%H%M%S")
+endfunction
+
+" Clean title for filename
+function! s:CleanTitle(title)
+  " Remove special characters and spaces, limit length
+  let clean = substitute(a:title, '[^A-Za-z0-9]', '_', 'g')
+  let clean = substitute(clean, '_\+', '_', 'g')  " Replace multiple underscores with single
+  let clean = substitute(clean, '^_\|_$', '', 'g')  " Remove leading/trailing underscores
+  return strpart(clean, 0, 50)  " Limit length to 50 chars
+endfunction
+
+" Create a new timestamped note with selected text
+function! timestamp_notes#from_selection() range
+  " Get selected text
+  let selected_text = join(getline(a:firstline, a:lastline), "\n")
+  
+  " Determine if this is a single line selection
+  let is_single_line = (a:firstline == a:lastline)
+  
+  " Ask which type of note to create
+  let note_type = input("Create note type (p)oetry or (f)ilosophy? ")
+  if note_type !~ '^[pf]$'
+    echo "\nCancelled"
+    return
+  endif
+  
+  " Determine the path based on note type
+  let path = note_type ==? 'p' ? '~/Documents/personal-poetry' : '~/Documents/philosophy-studies'
+  
+  " Generate filename with timestamp and cleaned selected text
+  let timestamp = s:GenerateTimestampFilename()
+  let title = s:CleanTitle(getline(a:firstline))
+  let filename = timestamp . '_' . title . '.md'
+  let full_path = expand(path) . '/' . filename
+  
+  " Create new buffer with the file
+  execute "edit " . full_path
+  
+  " Add content - title from first line
+  let first_line = getline(a:firstline)
+  call setline(1, "# " . first_line)
+  call setline(2, "Created: " . strftime("%Y-%m-%d %H:%M:%S"))
+  call setline(3, "Tags: ")
+  call setline(4, "")
+  call setline(5, "---")
+  call setline(6, "")
+  
+  " For single-line selections, don't duplicate the content in "Original selection"
+  if is_single_line
+    " Add empty content area for notes
+    call setline(7, "")
+  else
+    " For multi-line selections, include original text
+    call setline(7, "Original selection:")
+    call setline(8, "")
+    
+    " Add the selected text after the header
+    let lines = split(selected_text, "\n")
+    call append(8, lines)
+  endif
+  
+  " Position cursor at the tags line
+  normal! 3G$
+endfunction
+
+" Create a new timestamped note
+function! timestamp_notes#new(path)
+  let filename = s:GenerateTimestampFilename() . '.md'
+  let full_path = expand(a:path) . '/' . filename
+  execute "edit " . full_path
+  
+  " Add basic metadata
+  call setline(1, "# " . filename)
+  call setline(2, "Created: " . strftime("%Y-%m-%d %H:%M:%S"))
+  call setline(3, "Tags: ")
+  call setline(4, "")
+  call setline(5, "---")
+  call setline(6, "")
+  
+  " Position cursor for editing
+  normal! 7G
+endfunction
+
+" Commands for poetry and philosophy notes
+command! -nargs=0 NewPoetryNote call timestamp_notes#new(expand("~/Documents/personal-poetry"))
+command! -nargs=0 NewPhilosophyNote call timestamp_notes#new(expand("~/Documents/philosophy-studies"))
+command! -range NewNoteFromSelection <line1>,<line2>call timestamp_notes#from_selection()
+
+" Optional key mappings
+if !hasmapto('<Plug>TimestampNewPoetryNote')
+  map <leader>np <Plug>TimestampNewPoetryNote
+endif
+
+if !hasmapto('<Plug>TimestampNewPhilosophyNote')
+  map <leader>nf <Plug>TimestampNewPhilosophyNote
+endif
+
+if !hasmapto('<Plug>TimestampNewFromSelection')
+  vmap <leader>ns <Plug>TimestampNewFromSelection
+endif
+
+" Define plug mappings
+nnoremap <silent> <Plug>TimestampNewPoetryNote :<C-U>NewPoetryNote<CR>
+nnoremap <silent> <Plug>TimestampNewPhilosophyNote :<C-U>NewPhilosophyNote<CR>
+vnoremap <silent> <Plug>TimestampNewFromSelection :NewNoteFromSelection<CR>

@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# --- CONFIGURATION: LLM & DIRECTORIES ---
+MODEL_NAME="gemma3:latest"             # <--- CHANGE THIS to your pulled Ollama model!
+INPUT_DIR="."     # Use the clean, filtered directory
+OUTPUT_DIR="./obsidian-archive-texts/processed"     # Output folder for JSON files
+OLLAMA_API_URL="http://localhost:11434/api/generate"
+
+# --- THE EXTRACTION PROMPT (SYSTEM INSTRUCTION) ---
+# NOTE: The entire prompt is placed into the 'prompt' field of the JSON request.
+PROMPT="
+You are an expert knowledge base architect and archivist. Analyze the provided text note.
+
+Your primary task is to assign a new, concise title and generate a unique categorization string using the strict format: CATEGORY-SUBTOPIC-ID.
+
+Rules for Categorization String:
+1.  CATEGORY: Choose ONE from: 'personal', 'work', 'poem', 'thoughts', 'tasks'.
+2.  SUBTOPIC: Choose ONE from: 'philosophy', 'politics', 'economics', 'memories', 'todos'.
+3.  ID: Assign a unique, random 5-digit number (e.g., '98734').
+4.  Format: The final string must be exactly [CATEGORY]-[SUBTOPIC]-[ID] (e.g., thoughts-philosophy-8734).
+
+Extract the following information and structure the output strictly in JSON format. Crucially, include a field named 'OriginalContent' containing the full, raw text of the entire note provided as input.
+
+1.  NewTitle: A concise, descriptive, and memorable title (maximum 8 words).
+2.  CategoryID: The unique categorization string generated above.
+3.  CoreTheme: The central argument, question, or emotional thesis of the text (1-2 sentences).
+4.  KeyConcepts: A bulleted list (JSON array) of 3-5 essential terms, figures, or concepts mentioned or implied.
+5.  SourceTone: A single, appropriate emotional or intellectual tone (e.g., 'Contemplative', 'Defiant', 'Skeptical', 'Urgent').
+6.  OriginalContent: The complete, raw text of the input note.
+
+Input Note (Start of Note Content Below):
+"
+
+# --- EXECUTION ---
+
+mkdir -p "$OUTPUT_DIR"
+
+echo "Starting Ollama Extraction (Phase 1) using model: $MODEL_NAME"
+echo "---"
+
+# Loop through every .txt and .md file in the input directory
+for input_file in "$INPUT_DIR"/*.{txt,md}; do
+    
+    if [[ ! -f "$input_file" ]]; then
+        continue 
+    fi
+
+    filename_base=$(basename "$input_file")
+    filename=${filename_base%.*}
+    temp_output_file="$OUTPUT_DIR/$filename.json"
+
+    echo "Processing: $filename (${filename_base})..."
+
+    # 1. Read the note content and escape it for JSON payload
+    NOTE_CONTENT=$(<"$input_file")
+    
+    # 2. Construct the full prompt
+    FULL_PROMPT="$PROMPT$NOTE_CONTENT"
+
+    # 3. Construct the JSON payload for the Ollama API
+    # We use jq to safely build the JSON object with the prompt, stream=false, and format=json
+    PAYLOAD=$(jq -n \
+              --arg model "$MODEL_NAME" \
+              --arg prompt "$FULL_PROMPT" \
+              '{model: $model, prompt: $prompt, stream: false, format: "json", options: {temperature: 0.1}}')
+
+    # 4. Execute the cURL command and extract the final JSON response
+    # -s: Silent mode, -S: show error, -N: no buffer
+    # The output is piped to jq to extract the 'response' field, which contains the final JSON string.
+    RESPONSE=$(curl -sS -N "$OLLAMA_API_URL" -d "$PAYLOAD" 2>/dev/null | jq -r '.response')
+
+    if [ -n "$RESPONSE" ]; then
+        # The 'response' field is a string containing the JSON. We need to save it.
+        # Check if the extracted response is valid JSON before saving (Ollama models sometimes fail)
+        if echo "$RESPONSE" | jq '.' > /dev/null 2>&1; then
+             echo "$RESPONSE" > "$temp_output_file"
+             echo "  [SUCCESS] JSON generated to $temp_output_file"
+        else
+             echo "  [WARNING] Model returned invalid JSON. Saved raw output for review: ${temp_output_file}.raw"
+             echo "$RESPONSE" > "$temp_output_file.raw"
+        fi
+    else
+        echo "  [FATAL ERROR] Ollama API call failed for $input_file. Check if Ollama is running."
+    fi
+    echo ""
+
+done
+
+echo "---"
+echo "Phase 1 Complete. Next: Run the 'rename_json.sh' script."

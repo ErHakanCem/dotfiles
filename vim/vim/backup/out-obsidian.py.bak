@@ -1,0 +1,384 @@
+import os
+import subprocess
+import json
+from multiprocessing import Pool, Manager, cpu_count
+from datetime import datetime
+import random
+import time
+from pathlib import Path
+import re
+import sys
+
+# MODEL name
+MODEL = "gemma3:latest"
+
+# Fixed constraints
+CATEGORY_LIST = [
+    "programming", "architecture", "urbanism", "design", "health",
+    "philosophy", "politics", "economics", "literature",
+    "tasks", "art", "language", "personal"
+]
+
+TAG_LIST = ["code", "poem", "idea", "memories", "project"]
+TYPE_LIST = ["supporting", "refuting", "evidence", "claim", "question"]
+
+
+def classify_text(content, max_retries=3):
+    """Send content to Ollama and get structured response with retry logic."""
+    
+    prompt = f"""You will analyze a note and return ONLY valid JSON with no additional text.
+
+Choose ONE category from: {', '.join(CATEGORY_LIST)}
+Choose ONE tag from: {', '.join(TAG_LIST)}
+
+Return this exact JSON structure:
+{{
+  "category": "...",
+  "tag": "...",
+  "sub_topic": "...",
+  "keywords": ["...", "...", "..."]
+}}
+
+Text to analyze:
+\"\"\"{content[:2000]}\"\"\"
+"""
+
+    for attempt in range(max_retries):
+        try:
+            result = subprocess.run(
+                ["ollama", "run", MODEL],
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=60  # 60 second timeout
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"Ollama error: {result.stderr}")
+            
+            # Clean and parse response
+            response = result.stdout.strip()
+            
+            # Remove markdown code blocks if present
+            if response.startswith("```"):
+                lines = response.split('\n')
+                response = '\n'.join(lines[1:-1])
+            
+            # Try to parse JSON
+            parsed = json.loads(response)
+            
+            # Validate required fields
+            if "category" not in parsed or "tag" not in parsed:
+                raise ValueError("Missing required fields in response")
+            
+            # Validate category and tag are in allowed lists
+            if parsed["category"] not in CATEGORY_LIST:
+                parsed["category"] = "personal"  # fallback
+            
+            if parsed["tag"] not in TAG_LIST:
+                parsed["tag"] = "idea"  # fallback
+            
+            return parsed
+            
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # exponential backoff
+                continue
+            return {"error": f"JSON parse error: {str(e)}", "raw_response": response}
+        
+        except subprocess.TimeoutExpired:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"error": "Timeout waiting for Ollama"}
+        
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"error": str(e)}
+    
+    return {"error": "Max retries exceeded"}
+
+
+def create_yaml_frontmatter(classification, random_id):
+    """Create YAML frontmatter for Obsidian."""
+    yaml_lines = ["---"]
+    
+    if "error" not in classification:
+        yaml_lines.append(f"id: {random_id}")
+        yaml_lines.append(f"category: {classification.get('category', 'personal')}")
+        yaml_lines.append(f"tag: {classification.get('tag', 'idea')}")
+        yaml_lines.append(f"sub_topic: {classification.get('sub_topic', '')}")
+        
+        keywords = classification.get('keywords', [])
+        if keywords and isinstance(keywords, list):
+            yaml_lines.append(f"keywords:")
+            for kw in keywords:
+                yaml_lines.append(f"  - {kw}")
+        else:
+            yaml_lines.append(f"keywords: []")
+        
+        yaml_lines.append(f"processed_at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    else:
+        # Add error info
+        yaml_lines.append(f"id: {random_id}")
+        yaml_lines.append(f"classification_error: {classification['error']}")
+        yaml_lines.append(f"processed_at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    yaml_lines.append("---")
+    return '\n'.join(yaml_lines)
+
+
+def has_frontmatter(content):
+    """Check if the file already has YAML frontmatter."""
+    return content.strip().startswith('---')
+
+
+def remove_existing_frontmatter(content):
+    """Remove existing YAML frontmatter if present."""
+    if not has_frontmatter(content):
+        return content
+    
+    # Find the second '---' that closes the frontmatter
+    lines = content.split('\n')
+    end_index = -1
+    for i in range(1, len(lines)):
+        if lines[i].strip() == '---':
+            end_index = i
+            break
+    
+    if end_index > 0:
+        # Return content after the closing ---
+        return '\n'.join(lines[end_index + 1:]).lstrip('\n')
+    
+    return content
+
+
+def process_file(args):
+    """Process a single file with detailed error handling."""
+    filename, input_dir, output_dir, counter, total = args
+    
+    try:
+        fpath = os.path.join(input_dir, filename)
+        basename = Path(filename).stem
+        ext = Path(filename).suffix
+        
+        # Generate random ID first for filename
+        random_id = str(random.randint(100000, 999999))
+        
+        # read text file
+        with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read().strip()
+        
+        # skip empty files
+        if not content:
+            return {"status": "skipped", "file": filename, "reason": "empty"}
+        
+        # skip very large files (>100KB)
+        if len(content) > 100000:
+            return {"status": "skipped", "file": filename, "reason": "too_large"}
+        
+        # Remove existing frontmatter if any
+        clean_content = remove_existing_frontmatter(content)
+        
+        # classification from model
+        classification = classify_text(clean_content)
+        
+        # Determine category for filename (use fallback if error)
+        if "error" in classification:
+            category = "uncategorized"
+        else:
+            category = classification.get('category', 'personal')
+        
+        # Create new filename: category-id.md (e.g., programming-384729.md)
+        new_filename = f"{category}-{random_id}.md"
+        out_file = os.path.join(output_dir, new_filename)
+        
+        # Create YAML frontmatter
+        frontmatter = create_yaml_frontmatter(classification, random_id)
+        
+        # Add original filename to frontmatter for reference
+        frontmatter_lines = frontmatter.split('\n')
+        frontmatter_lines.insert(-1, f"original_file: {filename}")
+        frontmatter = '\n'.join(frontmatter_lines)
+        
+        # Combine frontmatter with content
+        final_content = f"{frontmatter}\n\n{clean_content}"
+        
+        # write markdown file with frontmatter
+        with open(out_file, "w", encoding="utf-8") as mf:
+            mf.write(final_content)
+        
+        # Update progress counter
+        with counter.get_lock():
+            counter.value += 1
+            current = counter.value
+        
+        # Print progress every 10 files
+        if current % 10 == 0:
+            print(f"Progress: {current}/{total} ({current*100//total}%)")
+        
+        status = "success" if "error" not in classification else "error"
+        result = {"status": status, "file": filename, "output": new_filename}
+        if "error" in classification:
+            result["error"] = classification["error"]
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "file": filename,
+            "error": f"Unexpected error: {str(e)}"
+        }
+
+
+def save_detailed_log(log_file, results, start_time, end_time):
+    """Save detailed log with categorized results."""
+    duration = (end_time - start_time).total_seconds() / 60.0
+    
+    processed = [r for r in results if r["status"] == "success"]
+    skipped = [r for r in results if r["status"] == "skipped"]
+    errors = [r for r in results if r["status"] == "error"]
+    
+    with open(log_file, "a", encoding="utf-8") as lf:
+        lf.write("\n\n" + "="*60 + "\n")
+        lf.write(f"RUN REPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        lf.write("="*60 + "\n")
+        lf.write(f"Started     : {start_time}\n")
+        lf.write(f"Finished    : {end_time}\n")
+        lf.write(f"Duration    : {round(duration, 2)} min\n")
+        lf.write(f"Total files : {len(results)}\n")
+        lf.write(f"Processed   : {len(processed)}\n")
+        lf.write(f"Skipped     : {len(skipped)}\n")
+        lf.write(f"Errors      : {len(errors)}\n")
+        lf.write(f"Success rate: {len(processed)*100//len(results) if results else 0}%\n")
+        lf.write("="*60 + "\n")
+        
+        # Log skipped files by reason
+        if skipped:
+            skip_reasons = {}
+            for item in skipped:
+                reason = item.get("reason", "unknown")
+                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+            
+            lf.write("\nSKIPPED FILES BY REASON:\n")
+            for reason, count in skip_reasons.items():
+                lf.write(f"  {reason}: {count}\n")
+        
+        # Log errors
+        if errors:
+            lf.write("\nERRORS:\n")
+            for item in errors[:50]:  # First 50 errors
+                lf.write(f"  {item['file']}: {item.get('error', 'Unknown error')}\n")
+            if len(errors) > 50:
+                lf.write(f"  ... and {len(errors) - 50} more errors\n")
+        
+        lf.write("\n")
+
+
+def main():
+    # Check for command line argument for number of workers
+    workers_arg = None
+    if len(sys.argv) > 1:
+        try:
+            workers_arg = int(sys.argv[1])
+            if workers_arg < 1 or workers_arg > 20:
+                print("⚠️  Workers must be between 1 and 20. Using default.")
+                workers_arg = None
+        except ValueError:
+            print("⚠️  Invalid worker count. Using default.")
+    
+    input_dir = "./obsidian-archive-texts/"
+    output_dir = "./"  # All files will be .md with YAML frontmatter
+    log_file = "process_log.txt"
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # scan md & txt
+    files = [
+        f for f in os.listdir(input_dir)
+        if Path(f).suffix.lower() in [".md", ".txt"]
+    ]
+    
+    total_files = len(files)
+    
+    # Number of parallel workers (adjust based on your system)
+    # More workers = faster, but may overwhelm Ollama or use too much RAM
+    # Recommended: 4-8 for most systems, up to 12 for powerful machines
+    if workers_arg:
+        workers = workers_arg
+    else:
+        workers = min(cpu_count(), 8)  # Will use up to 8 workers by default
+    
+    print("\n" + "="*60)
+    print("📚 NOTE CLASSIFICATION PIPELINE")
+    print("="*60)
+    print(f"📁 Input directory : {input_dir}")
+    print(f"📂 Output directory: {output_dir}")
+    print(f"📄 Total files     : {total_files}")
+    print(f"⚡ Workers         : {workers} (processing {workers} files simultaneously)")
+    print(f"🤖 Model           : {MODEL}")
+    print(f"📝 Format          : Markdown with YAML frontmatter")
+    print(f"💡 Tip: Run with 'python process.py <N>' to use N workers")
+    print("="*60 + "\n")
+    
+    # Check if Ollama is running
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            print("❌ Error: Ollama is not running or not installed")
+            print("   Please start Ollama first: 'ollama serve'")
+            return
+    except Exception as e:
+        print(f"❌ Error checking Ollama: {e}")
+        return
+    
+    manager = Manager()
+    counter = manager.Value('i', 0)
+    
+    start_time = datetime.now()
+    
+    # Prepare arguments for multiprocessing
+    file_args = [(f, input_dir, output_dir, counter, total_files) for f in files]
+    
+    # Process files
+    with Pool(workers) as pool:
+        results = pool.map(process_file, file_args)
+    
+    end_time = datetime.now()
+    
+    # Save logs
+    save_detailed_log(log_file, results, start_time, end_time)
+    
+    # Print summary
+    processed = [r for r in results if r["status"] == "success"]
+    skipped = [r for r in results if r["status"] == "skipped"]
+    errors = [r for r in results if r["status"] == "error"]
+    
+    duration = (end_time - start_time).total_seconds() / 60.0
+    
+    print("\n" + "="*60)
+    print("📊 FINAL REPORT")
+    print("="*60)
+    print(f"⏱️  Duration    : {round(duration, 2)} min")
+    print(f"✅ Processed   : {len(processed)}")
+    print(f"⏭️  Skipped     : {len(skipped)}")
+    print(f"❌ Errors      : {len(errors)}")
+    print(f"📈 Success rate: {len(processed)*100//total_files if total_files else 0}%")
+    print("="*60)
+    
+    if errors:
+        print(f"\n⚠️  {len(errors)} files had errors. Check {log_file} for details.")
+    
+    print(f"\n✨ Classification complete! Results saved to: {output_dir}/")
+    print(f"💡 All files are .md with YAML frontmatter for Obsidian")
+
+
+if __name__ == "__main__":
+    main()

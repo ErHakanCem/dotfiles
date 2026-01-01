@@ -1,0 +1,330 @@
+#!/bin/bash
+# Custom aliases file
+# This file contains user-defined aliases and is sourced by the shell
+
+
+# =============================================================================
+# DIRECTORY NAVIGATION & FILE OPERATIONS
+# =============================================================================
+
+# Quick directory navigation
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+
+# Enhanced ls commands with colors (macOS compatible)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS uses -G for colors
+    alias ll='ls -lhG'         # Long format
+    alias la='ls -lAhG'        # Long format with hidden files
+    alias l='ls -lahG'         # Long format with all files
+    alias lsa='ls -lahG'       # Alternative long format
+    alias ls='ls -G'           # Always use colors
+else
+    # Linux uses --color=auto
+    alias ll='ls -lh --color=auto'         # Long format
+    alias la='ls -lAh --color=auto'        # Long format with hidden files
+    alias l='ls -lah --color=auto'         # Long format with all files
+    alias lsa='ls -lah --color=auto'       # Alternative long format
+    alias ls='ls --color=auto'             # Always use colors
+fi
+
+# Directory operations
+alias md='mkdir -p'       # Create directories recursively
+alias rd='rmdir'          # Remove empty directories
+
+# =============================================================================
+# SAFE FILE OPERATIONS
+# =============================================================================
+
+# Safe rm - moves files to trash instead of permanent deletion
+rm() {
+    mv "$@" ~/.Trash/
+}
+
+# Original rm command (use with caution)
+alias rmp='/bin/rm'       # Use system rm (permanent deletion)
+
+# =============================================================================
+# GIT SHORTCUTS
+# =============================================================================
+
+# Basic Git commands
+alias g='git'                        # Short for 'git'
+alias ga='git add'                   # Add files to staging
+alias gaa='git add --all'            # Add all changed files to staging
+alias gc='git commit -m'             # Commit with message
+alias gca='git commit --amend'       # Change last commit
+
+# Push commands (send changes to GitHub)
+alias gp='git push'                  # Push to current branch
+alias gpo='git push origin'          # Push to origin (GitHub)
+alias gpu='git push -u origin HEAD'  # Push current branch and set upstream
+alias gps='git push --set-upstream origin'  # Set upstream and push
+
+# Quick workflow commands
+alias gcp='git add --all && git commit -m "$(date +"%Y-%m-%d %H:%M:%S"): Quick commit" && git push'  # Add all, commit with timestamp, push
+alias gcpm='f() { git add --all && git commit -m "$1" && git push; }; f'  # Add all, commit with your message, push
+
+# Check status and branches
+alias gs='git status'                # Show what files changed
+alias gss='git status --short'       # Show status in short format
+alias gb='git branch'                # Show local branches
+alias gba='git branch --all'         # Show all branches (local + remote)
+
+# Get updates from GitHub
+alias gl='git pull'                  # Download changes from GitHub
+alias gf='git fetch'                 # Check for updates without downloading
+
+# See differences
+alias gd='git diff'                  # Show changes not yet staged
+alias gds='git diff --staged'        # Show changes ready to commit
+
+# View history
+alias glg='git log --oneline --graph --decorate --all -10'  # Show last 10 commits in pretty format
+
+# Dotfiles management (bare repository)
+alias dotfiles='/usr/bin/git --git-dir=/Users/ahmetomay/.dotfiles/ --work-tree=/Users/ahmetomay'
+
+# =============================================================================
+# FZF (FUZZY FINDER) ALIASES
+# =============================================================================
+
+# Basic FZF
+alias fz='fzf'
+
+# FZF with PDF and Image Preview
+alias fzp='fzf --preview="
+  case {} in
+    *.pdf) pdftotext {} - | head -50 ;;
+    *.jpg|*.jpeg|*.png|*.gif|*.bmp|*.tiff|*.webp) chafa --size=40x20 --colors=256 {} ;;
+    *) bat --color=always --style=numbers {} 2>/dev/null || file {} ;;
+  esac
+"'
+
+# FZF to open files with specific applications
+alias fzo='file=$(fzp) && [[ -n "$file" ]] && case "$file" in *.txt|*.md|*.log|*.json|*.yaml|*.yml|*.sh|*.py|*.js|*.html|*.c|*.cpp|*.h|*.java|*.go|*.rs|*.vim|*.lua|*.conf|*.cfg|*.ini) nvim "$file" ;; *.mp3|*.wav|*.ogg|*.flac|*.m4a|*.aac) mpv "$file" ;; *.pdf|*.jpg|*.jpeg|*.png|*.gif|*.bmp|*.tiff|*.webp) open "$file" ;; *) open "$file" ;; esac'
+
+
+# FZF with file preview using bat (cross-platform)
+# if command -v bat > /dev/null 2>&1; then
+#     alias fzp='fzf --preview "bat --style=numbers --color=always --line-range :500 {}"'
+# else
+#    alias fzp='fzf --preview "head -500 {}"'
+# fi
+
+# Edit file selected with FZF
+# alias fze='${EDITOR:-vim} $(fzf)'
+
+# Change to directory selected with FZF (safe version)
+alias fzd='cd "$(find . -type d -not -path "*/.*" 2>/dev/null | fzf)"'
+
+# FZF in git files
+alias fzg='git ls-files | fzf'
+
+# FZF in command history (platform-aware)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    alias fzh='fc -l 1 | fzf --tac --preview "echo {} | cut -c8-"'
+else
+    alias fzh='history | fzf --tac --preview "echo {} | cut -c8-"'
+fi
+
+# FZF App Launcher Functions
+
+# Interactive app launcher with fzf
+fzf-apps() {
+    local app=$(find /Applications -name "*.app" -maxdepth 1 | 
+                 sed 's|/Applications/||; s|\.app$||' | 
+                 sort | 
+                 fzf --height 40% --border --prompt "Open App: ")
+    
+    if [ -n "$app" ]; then
+        open -a "$app"
+    fi
+}
+
+# Include system apps and utilities
+fzf-apps-all() {
+    local app=$(find /Applications /System/Applications -name "*.app" -maxdepth 2 2>/dev/null | 
+                 sed 's|.*/||; s|\.app$||' | 
+                 sort -u | 
+                 fzf --height 40% --border --prompt "Open App: " --preview 'echo "Launch: {}"')
+    
+    if [ -n "$app" ]; then
+        open -a "$app"
+    fi
+}
+
+# With preview (shows app path)
+fzf-apps-preview() {
+    local app_path=$(find /Applications /System/Applications -name "*.app" -maxdepth 2 2>/dev/null | 
+                     fzf --height 40% --border --prompt "Open App: " \
+                         --preview 'echo "Path: {}" && echo "Name: $(basename {} .app)"')
+    
+    if [ -n "$app_path" ]; then
+        open "$app_path"
+    fi
+}
+
+# Quick alias for app launching
+alias apps='find /Applications -name "*.app" -maxdepth 1 | sed "s|/Applications/||; s|\.app$||" | sort | fzf --height 40% --border --prompt "Open App: " | xargs -I {} open -a "{}"'
+
+# =============================================================================
+# MEDIA & DOWNLOAD TOOLS
+# =============================================================================
+# YouTube to MP3 downloader
+alias record='yt-dlp -x --audio-format mp3'
+
+# YouTube downloader
+alias youtube='yt-dlp'
+
+# Media player
+alias play='mpv'
+alias listen='cd ~/my-music/'
+# =============================================================================
+# UTILITY ALIASES
+# =============================================================================
+
+# Enhanced grep with color
+alias grep='grep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.idea,.tox,.venv,venv}'
+
+# Quick access to history
+alias h='history'
+
+# PDF conversion
+alias convert='convertPdf'
+
+# =============================================================================
+# DEVELOPMENT ALIASES
+# =============================================================================
+
+# (Git aliases moved to GIT SHORTCUTS section above)
+
+# =============================================================================
+# SYSTEM INFORMATION
+# =============================================================================
+
+# Show current directory tree structure
+alias tree='find . -type d | sed -e "s/[^-][^/]*//  |/g" -e "s/|\([^ ]\)/|-\1/"'
+
+# Show disk usage in human readable format
+alias du='du -h'
+alias df='df -h'
+
+# =============================================================================
+# NOTES
+# =============================================================================
+# To add new aliases:
+# 1. Add them to this file
+# 2. Run: source ~/.bash_aliases
+# 3. Or restart your terminal
+#
+# To see all active aliases: alias
+# To remove an alias temporarily: unalias alias_name
+# =============================================================================
+alias n="nvim"
+
+# File name cleaning alias
+alias fxnames='detox'
+
+# File management aliases
+alias d='fzd'
+alias files='yazi'
+alias y='files'  # search files
+alias o='fzo'  # open file with fzf
+alias p='fzp'  # preview file with fzf
+alias a='apps'  # open app with fzf
+
+# =============================================================================
+# WARP TERMINAL SESSION MANAGEMENT
+# =============================================================================
+
+# Session management helper
+alias sessions='~/.warp_sessions_helper.sh'
+
+# Quick session operations
+alias wsave='echo "💾 Use Cmd+Shift+S to save current session"'
+alias wopen='echo "📂 Use Cmd+Shift+O to open saved session"'
+alias whelp='echo "🚀 Warp Session Shortcuts:"; echo "  Cmd+Shift+S - Save session"; echo "  Cmd+Shift+O - Open session"; echo "  Cmd+Shift+W - Workspace menu"'
+
+# =============================================================================
+# BACKUP MANAGEMENT
+# =============================================================================
+
+# Backup manager for my-self folder
+alias backup='~/my-self/.scripts/backup_my_self.sh'
+alias backup-status='~/my-self/.scripts/backup_my_self.sh status'
+alias backup-now='~/my-self/.scripts/backup_my_self.sh backup'
+alias backup-help='~/my-self/.scripts/backup_my_self.sh help'
+
+
+# =============================================================================
+# macOS Color Tag Aliases
+# =============================================================================
+
+alias urgent='mdfind "kMDItemUserTags == \"Red\""'
+alias todo='mdfind "kMDItemUserTags == \"Orange\""'
+alias inprogress='mdfind "kMDItemUserTags == \"Yellow\""'
+alias review='mdfind "kMDItemUserTags == \"Green\""'
+alias reference='mdfind "kMDItemUserTags == \"Blue\""'
+alias waiting='mdfind "kMDItemUserTags == \"Purple\""'
+alias archived='mdfind "kMDItemUserTags == \"Gray\""'
+
+# =============================================================================
+# ARABIC TEXT ART
+# =============================================================================
+
+# Arabic banner generator - like nvim startup screen
+alias bismillah='~/my-self/.scripts/arabic-banner.sh'
+alias arabic='~/my-self/.scripts/arabic-banner.sh'
+alias banner='~/my-self/.scripts/arabic-banner.sh'
+
+# Advanced Arabic art generator with more styles and phrases
+alias art='~/my-self/.scripts/arabic-art-generator.sh'
+alias arabic-art='~/my-self/.scripts/arabic-art-generator.sh'
+alias dua='~/my-self/.scripts/arabic-art-generator.sh phrase'
+alias alhamdulillah='~/my-self/.scripts/arabic-art-generator.sh phrase alhamdulillah'
+alias subhanallah='~/my-self/.scripts/arabic-art-generator.sh phrase subhanallah'
+alias allahuakbar='~/my-self/.scripts/arabic-art-generator.sh phrase allahuakbar'
+
+# =============================================================================
+# MPV MANAGEMENT
+# =============================================================================
+
+# MPV process manager - list and control mpv instances
+alias mpv-manager='~/my-self/mpv-manager.sh'
+
+
+# Yazi Smart Folder Scripts
+alias ysmart='~/my-self/.scripts/yazi-smart'
+alias ymd='~/my-self/.scripts/yazi-smart-md'
+alias ypdf='~/my-self/.scripts/yazi-smart-pdf'
+
+# mdfind Smart Folder Aliases
+alias findmd='mdfind "kMDItemDisplayName == \"*.md\""'
+alias findpdf='mdfind "kMDItemContentType == \"com.adobe.pdf\""'
+alias findrecentmd='mdfind "kMDItemDisplayName == \"*.md\" && kMDItemContentModificationDate >= \$time.today(-7)\"'
+alias findrecentpdf='mdfind "kMDItemContentType == \"com.adobe.pdf\" && kMDItemContentModificationDate >= \$time.today(-7)\"'
+alias findweekmd='mdfind "kMDItemDisplayName == \"*.md\" && kMDItemContentModificationDate >= \$time.today(-30)\"'
+alias findweekpdf='mdfind "kMDItemContentType == \"com.adobe.pdf\" && kMDItemContentModificationDate >= \$time.today(-30)\"'
+
+# mdfind with location filters
+alias findmdhome='mdfind -onlyin ~ "kMDItemDisplayName == \"*.md\""'
+alias findpdfhome='mdfind -onlyin ~ "kMDItemContentType == \"com.adobe.pdf\""'
+alias findmddocs='mdfind -onlyin ~/Documents "kMDItemDisplayName == \"*.md\""'
+alias findpdfdocs='mdfind -onlyin ~/Documents "kMDItemContentType == \"com.adobe.pdf\""'
+
+# =============================================================================
+# ZEN MODE - VIM WITH FZF PREVIEW
+# =============================================================================
+
+# Zen mode: Open vim with fzf file selection and preview
+alias zen='vim $(fzf --preview="bat --color=always --style=numbers --line-range :500 {} 2>/dev/null || file {}")'
+
+# Custom
+alias daily='vim ~/my-self/vaults/logseq/agenda/journals/$(date +%Y-%m-%d).md'
+alias journal='vim ~/my-self/vaults/logseq/agenda/journals/$(date +%Y-%m-%d).md'
+
+
+

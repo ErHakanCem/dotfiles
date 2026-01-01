@@ -1,0 +1,12 @@
+:NewNoteFromSelection	timestamp_notes.txt	/*:NewNoteFromSelection*
+:NewPhilosophyNote	timestamp_notes.txt	/*:NewPhilosophyNote*
+:NewPoetryNote	timestamp_notes.txt	/*:NewPoetryNote*
+timestamp-notes	timestamp_notes.txt	/*timestamp-notes*
+timestamp-notes-commands	timestamp_notes.txt	/*timestamp-notes-commands*
+timestamp-notes-format	timestamp_notes.txt	/*timestamp-notes-format*
+timestamp-notes-leader-nf	timestamp_notes.txt	/*timestamp-notes-leader-nf*
+timestamp-notes-leader-np	timestamp_notes.txt	/*timestamp-notes-leader-np*
+timestamp-notes-leader-ns	timestamp_notes.txt	/*timestamp-notes-leader-ns*
+timestamp-notes-mappings	timestamp_notes.txt	/*timestamp-notes-mappings*
+timestamp-notes-snippets	timestamp_notes.txt	/*timestamp-notes-snippets*
+timestamp_notes.txt	timestamp_notes.txt	/*timestamp_notes.txt*

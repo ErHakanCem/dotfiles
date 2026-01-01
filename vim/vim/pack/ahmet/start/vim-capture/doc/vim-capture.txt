@@ -1,0 +1,157 @@
+*vim-capture.txt*   Lightweight capture plugin for Vim
+
+==============================================================================
+VIM-CAPTURE                                                   *vim-capture*
+
+A minimal, Vim-native capture plugin inspired by Logseq.
+
+Capture selected text or the current line into Markdown files with timestamps,
+bullets, or tasks — without leaving Vim.
+
+------------------------------------------------------------------------------
+
+CONTENTS                                                     *vim-capture-contents*
+
+  1. Introduction ................. |vim-capture-intro|
+  2. Installation ................. |vim-capture-install|
+  3. Configuration ................ |vim-capture-config|
+  4. Usage ......................... |vim-capture-usage|
+  5. Commands ...................... |vim-capture-commands|
+  6. Mappings ...................... |vim-capture-mappings|
+  7. Folder Structure .............. |vim-capture-folders|
+  8. Extending ..................... |vim-capture-extending|
+
+==============================================================================
+1. Introduction                                             *vim-capture-intro*
+
+vim-capture provides a fast, append-only capture workflow directly inside Vim.
+
+Design goals:
+- text-first
+- keyboard-driven
+- append-only
+- Git-friendly
+- no UI or popups
+
+Inspired by Logseq’s capture flow, built the Vim way.
+
+==============================================================================
+2. Installation                                             *vim-capture-install*
+
+Using Vim’s built-in package system:
+
+>
+  mkdir -p ~/.vim/pack/capture/start
+  git clone https://your-repo/vim-capture ~/.vim/pack/capture/start/vim-capture
+<
+
+Restart Vim and generate helptags:
+
+>
+  :helptags ALL
+<
+
+==============================================================================
+3. Configuration                                            *vim-capture-config*
+
+Default configuration:
+
+>
+  let g:capture_base_dir = '~/notes'
+  let g:capture_default_file =
+        \ g:capture_base_dir . '/worksheets/worksheet-antea.md'
+<
+
+Users are encouraged to override only the base directory.
+
+==============================================================================
+4. Usage                                                    *vim-capture-usage*
+
+Capture works in both Visual and Normal mode.
+
+Visual mode:
+- select text
+- trigger a capture mapping or command
+
+Normal mode:
+- captures the current line
+
+Each capture appends a timestamped Markdown block:
+
+>
+  ## 2025-01-16 18:12
+
+  captured text
+<
+
+==============================================================================
+5. Commands                                                 *vim-capture-commands*
+
+:Capture
+        Capture selected text as plain Markdown.
+
+:CaptureBullet
+        Capture selected text as bullet list items.
+
+:CaptureTask
+        Capture selected text as task list items (- [ ]).
+
+All commands accept a visual range.
+
+==============================================================================
+6. Mappings                                                 *vim-capture-mappings*
+
+Default mappings (using <Leader>):
+
+Visual mode:
+>
+  <Leader>c     plain capture
+  <Leader>cb    bullet capture
+  <Leader>ct    task capture
+<
+
+Normal mode:
+>
+  <Leader>c     capture current line
+  <Leader>ct    capture current line as task
+<
+
+Mappings can be overridden by the user.
+
+==============================================================================
+7. Folder Structure                                        *vim-capture-folders*
+
+Default folder layout:
+
+>
+  ~/notes/
+  └── worksheets/
+      └── worksheet-antea.md
+<
+
+Directories are created automatically if they do not exist.
+
+==============================================================================
+8. Extending                                                *vim-capture-extending*
+
+Custom capture targets can be added easily:
+
+>
+  command! -range CaptureIdeas
+        \ call capture#to_file('ideas.md', {}, <line1>, <line2>)
+<
+
+Possible extensions:
+- daily journal files
+- tag-based routing
+- remembering last capture file
+- YAML frontmatter
+- wiki links
+
+==============================================================================
+vim-capture                                                *vim-capture-end*
+
+Maintained as a small, composable Vim plugin.
+
+License: MIT
+

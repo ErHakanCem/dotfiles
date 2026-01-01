@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Check if a database file was provided
+if [ -z "$1" ]; then
+    echo "Usage: ./extract_memos.sh <database_file>"
+    exit 1
+fi
+
+DB_FILE="$1"
+
+echo "--- SQLite Memo Extractor ---"
+
+# --- CONFIGURATION WITH YOUR DEFAULTS ---
+
+# 1. Table Name (Default: memos)
+read -p "Enter table name [default: memos]: " TABLE_INPUT
+TABLE_NAME=${TABLE_INPUT:-memos}
+
+# 2. Filename Column (Default: _id)
+# Files will be named '1', '2', '3', etc.
+read -p "Enter column for FILENAME [default: _id]: " NAME_INPUT
+NAME_COL=${NAME_INPUT:-_id}
+
+# 3. Content Column (Default: name)
+# The column containing the actual file data
+read -p "Enter column for DATA/CONTENT [default: name]: " DATA_INPUT
+DATA_COL=${DATA_INPUT:-name}
+
+# --- EXECUTION ---
+
+# Create a clean directory for the output
+OUTPUT_DIR="memos-from-Anrdoid-phone"
+mkdir -p "$OUTPUT_DIR"
+echo -e "\nExtracting files to '$OUTPUT_DIR/'..."
+
+# Run the extraction
+# Note: We cd into the output directory inside the subshell ( ) so files land there
+(
+    cd "$OUTPUT_DIR"
+    sqlite3 "../$DB_FILE" "SELECT writefile($NAME_COL, $DATA_COL) FROM $TABLE_NAME;"
+)
+
+if [ $? -eq 0 ]; then
+    echo "Success! Check the '$OUTPUT_DIR' folder."
+else
+    echo "Error during extraction."
+fi

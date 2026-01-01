@@ -1,0 +1,62 @@
+
+- #semantic- search is a search technique that goes beyond matching exact keywords—it tries to understand the meaning or intent behind a query and the context of the content it's searching.
+
+- # What You Want to Classify
+| Category      | NLP Task                                        | Example                  |
+| ------------- | ----------------------------------------------- | ------------------------ |
+| **Questions** | Sentence classification                         | "What time is it?"       |
+| **Examples**  | Sentence classification or cue phrase detection | "For example,..."        |
+| **Arguments** | Argument mining / stance detection              | "Because of..."          |
+| **Names**     | Named Entity Recognition (NER)                  | "Albert Einstein"        |
+| **Places**    | NER (Location entities)                         | "New York City"          |
+| **Topics**    | Topic modeling / keyword extraction             | "Climate change"         |
+| **Phrases**   | Phrase extraction / chunking                    | "Machine learning model" |
+
+- # What It Means to “Classify Text”
+
+| Text Type        | What You Want the System to Detect                | Example                                     |
+| ---------------- | ------------------------------------------------- | ------------------------------------------- |
+| **Question**     | Is this a question?                               | “What is semantic search?”                  |
+| **Example**      | Is this an example or illustration?               | “For instance, bees produce propolis.”      |
+| **Argument**     | Is this a reason or a claim supporting something? | “Therefore, this method is more efficient.” |
+| **Name**         | Is this a person’s name?                          | “Albert Einstein”                           |
+| **Place**        | Is this a location?                               | “Paris, France”                             |
+| **Topic Phrase** | What is the subject being talked about?           | “climate change”                            |
+| **Phrase**       | Is this a meaningful multi-word expression?       | “machine learning algorithm”                |
+
+- # Which NLP Tasks Match These Categories
+| Your Target     | NLP Technique                                   | Tool                            |
+| --------------- | ----------------------------------------------- | ------------------------------- |
+| Questions       | Sentence classification, rule-based detection   | spaCy, Regex, fine-tuned BERT   |
+| Examples        | Sentence classification or cue phrase detection | Custom model or rules           |
+| Arguments       | Argument mining, stance detection               | Transformers, Argumentative-Zoo |
+| Names & Places  | Named Entity Recognition (NER)                  | spaCy, Hugging Face             |
+| Topic Phrases   | Topic Modeling / Keyword Extraction             | BERTopic, LDA, KeyBERT          |
+| General Phrases | Phrase extraction / Chunking                    | spaCy noun chunks, NP chunking  |
+
+- # Example
+    > “What is gravity? Einstein explained it with his theory of general relativity. For example, objects like the Earth bend space.”
+```
+{
+  "type": ["question", "example", "argument"],
+  "entities": ["Einstein", "Earth"],
+  "places": [],
+  "topics": ["gravity", "general relativity"],
+  "phrases": ["theory of general relativity", "objects like the Earth"]
+}
+```
+- # Label or Score Each Sentence
+You now classify or score each sentence based on its argumentative role:
+Main claim → The central idea everything else supports
+Supporting claim → Gives evidence or examples
+Example → Illustrates an idea
+Background → Context, not a claim
+Opposition (optional)
+
+- # Find the Sentence That Covers the Rest
+Once labeled, the main claim will often be:
+Broad in scope
+Supported by others
+Often appears early or at the conclusion
+Not dependent on another sentence to make sense
+

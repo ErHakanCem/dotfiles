@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# This script uses pdftotext to create a plain text preview
+# It respects width by displaying only the first 80 characters per line
+
+FILE="$1"
+
+if [[ -f "$FILE" ]]; then
+    pdftotext "$FILE" - | awk '{print substr($0, 1, 80)}'
+else
+    echo "File not found"
+    exit 1
+fi
+

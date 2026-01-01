@@ -1,0 +1,18 @@
+# Book Metadata Project
+
+Folders:
+- input_pdfs/: put PDFs here
+- extracted_text/: cached text JSONs
+- ollama_outputs/: raw YAML from LLM
+- obsidian_notes/: final .md notes
+- audit_logs/: CSV / logs
+- renamed_pdfs/: renamed PDFs after extraction
+
+Step 1: create skeleton (this)
+Step 2: text extraction (PyMuPDF / pdfminer) -> extracted_text/
+Step 3: call Ollama -> save YAML in ollama_outputs/
+Step 4: convert YAML -> obsidian_notes/ (frontmatter)
+Step 5: rename PDFs into renamed_pdfs/
+
+To list PDFs:
+./runner.sh --list

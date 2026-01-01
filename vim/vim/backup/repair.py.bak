@@ -1,0 +1,48 @@
+import os
+import json
+
+input_dir = "./"  # Change if needed
+log_file = "invalid_json.log"
+
+invalid_entries = []
+
+def validate_json(file_path):
+    """Return True if JSON is valid, otherwise returns error message."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            json.load(f)
+        return True
+    except Exception as e:
+        return str(e)
+
+total_files = 0
+invalid_files = 0
+
+with open(log_file, "w", encoding="utf-8") as log:
+    log.write("Invalid JSON Report\n")
+    log.write("="*60 + "\n\n")
+
+    for file in os.listdir(input_dir):
+        if not file.endswith(".json"):
+            continue
+
+        total_files += 1
+        file_path = os.path.join(input_dir, file)
+
+        result = validate_json(file_path)
+
+        if result is True:
+            continue
+
+        invalid_files += 1
+        invalid_entries.append((file, result))
+
+        with open(log_file, "a", encoding="utf-8") as log:
+            log.write(f"❌ {file}\n")
+            log.write(f"Error → {result}\n")
+            log.write("-"*60 + "\n")
+
+print(f"🔍 Total JSON files checked: {total_files}")
+print(f"❌ Invalid JSON files: {invalid_files}")
+print(f"📄 Log saved to: {log_file}")
+

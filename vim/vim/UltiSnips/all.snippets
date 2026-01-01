@@ -1,0 +1,59 @@
+
+# Test snippets
+snippet test "Test Snippet" b
+This is a test snippet
+endsnippet
+
+# Book snippets
+snippet book "Basic Book Template" b
+Title: ${1:Book Title}
+Author: ${2:Author Name}
+Year: ${3:Year}
+endsnippet
+
+# Example book entries
+snippet book1984 "George Orwell - 1984" b
+"1984" by George Orwell (1949)
+A dystopian novel set in a totalitarian regime where Big Brother is always watching.
+endsnippet
+
+snippet bookgats "F. Scott Fitzgerald - The Great Gatsby" b
+"The Great Gatsby" by F. Scott Fitzgerald (1925)
+A novel about the American Dream, wealth, and social class in the Jazz Age.
+endsnippet
+
+snippet bookmoby "Herman Melville - Moby Dick" b
+"Moby Dick" by Herman Melville (1851)
+An epic tale of Captain Ahab's quest for revenge against the white whale, Moby Dick.
+endsnippet
+
+snippet bookquix "Miguel de Cervantes - Don Quixote" b
+"Don Quixote" by Miguel de Cervantes (1605)
+A satirical novel about a man who becomes so enamored with tales of chivalry that he loses his sanity and sets out to revive knighthood.
+endsnippet
+
+snippet bookpot "J.K. Rowling - Harry Potter series" b
+"Harry Potter" series by J.K. Rowling (1997-2007)
+A fantasy series following the journey of young wizard Harry Potter and his friends.
+endsnippet
+
+snippet bookhgr "Suzanne Collins - The Hunger Games" b
+"The Hunger Games" by Suzanne Collins (2008)
+A dystopian novel where youth are forced to participate in a televised death match.
+endsnippet
+
+snippet booksap "Yuval Noah Harari - Sapiens" b
+"Sapiens: A Brief History of Humankind" by Yuval Noah Harari (2011)
+A book exploring the history and impact of Homo sapiens on the world.
+endsnippet
+
+snippet booktfs "Daniel Kahneman - Thinking, Fast and Slow" b
+"Thinking, Fast and Slow" by Daniel Kahneman (2011)
+An examination of the two systems that drive the way we think and make decisions.
+endsnippet
+
+# Make the file type explicit
+global !p
+def is_markdown(fn):
+    return fn.endswith('.md')
+endglobal

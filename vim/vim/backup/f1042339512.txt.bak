@@ -1,0 +1,28 @@
+
+how I am doing
+instructions
+directives
+process
+approach
+guideline
+actions
+code
+method
+rule
+protocol
+
+---
+
+- process -  main  page:  self.md  ?dashboard
+- using custom created commands `my-pages my-journal` for logseq pages and journal ; created aliases `mj mp` 
+using abbr.md
+202408-19153724 ;  use \ to escape character in echo command such as example #project to tag
+vim .vimrc .bashrc .bash_aliases 
+`vim -O ~/self/todo.md ~/self/DONE.md`
+vim -O file-1 file-2
+vim -o file-1 file-2
+`zellij attach base`
+`source start.vim` ; start vim session or use `vim -S start.vim`
+20240828-19.0617 ;  using `search` comand alias `rfv` find line in which search item exist, opened with vim and edit #productivity
+20240829-05.0553 ;  vim session file under each directory of project to continue where left off #productivity
+20240829-05.2519 ;  #vim use always registers to call them from memory using `:reg` command

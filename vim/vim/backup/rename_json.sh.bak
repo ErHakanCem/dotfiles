@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# --- CONFIGURATION: RENAMING ---
+JSON_DIR="./structured_json"
+
+echo "Starting Mass Renaming (Phase 2)..."
+echo "---"
+
+# Loop through every .json file in the structured output directory
+for json_file in "$JSON_DIR"/*.json; do
+    
+    if [[ ! -f "$json_file" ]]; then
+        continue 
+    fi
+
+    # 1. Extract the CategoryID value using jq
+    new_filename_base=$(jq -r '.CategoryID' "$json_file" 2>/dev/null)
+
+    # 2. Check for successful extraction
+    if [ -n "$new_filename_base" ] && [ "$new_filename_base" != "null" ]; then
+        final_file_name="$JSON_DIR/$new_filename_base.json"
+        
+        # 3. Rename the file
+        if [ "$json_file" != "$final_file_name" ]; then
+             if [ -f "$final_file_name" ]; then
+                echo "  [WARNING] Collision skipped: $final_file_name exists. Retaining original name: $(basename "$json_file")"
+            else
+                mv "$json_file" "$final_file_name"
+                echo "  [RENAMED] $(basename "$json_file") -> $new_filename_base.json"
+            fi
+        fi
+    else
+        echo "  [ERROR] CategoryID not found or invalid in file: $(basename "$json_file"). Skipping rename."
+    fi
+done
+
+echo "---"
+echo "Phase 2 Complete: JSON files are now named using the CategoryID field."

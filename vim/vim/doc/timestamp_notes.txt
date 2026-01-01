@@ -1,0 +1,62 @@
+*timestamp_notes.txt*  Timestamp-based note creation
+
+Author:  Created for ahmetomay
+License: Same terms as Vim itself (see |license|)
+
+INTRODUCTION                                    *timestamp-notes*
+
+This plugin provides functionality for creating timestamp-based notes, particularly
+useful for poetry and philosophy notes.
+
+COMMANDS                                        *timestamp-notes-commands*
+
+:NewPoetryNote                                 *:NewPoetryNote*
+    Creates a new timestamped note in the poetry directory
+    (~/Documents/personal-poetry)
+
+:NewPhilosophyNote                             *:NewPhilosophyNote*
+    Creates a new timestamped note in the philosophy directory
+    (~/Documents/philosophy-studies)
+
+:[range]NewNoteFromSelection                   *:NewNoteFromSelection*
+    Creates a new timestamped note from selected text
+    Prompts for note type (poetry or philosophy)
+
+MAPPINGS                                        *timestamp-notes-mappings*
+
+<Leader>np                                     *timestamp-notes-leader-np*
+    Create new poetry note
+
+<Leader>nf                                     *timestamp-notes-leader-nf*
+    Create new philosophy note
+
+<Leader>ns                                     *timestamp-notes-leader-ns*
+    Create new note from visual selection
+    (Visual mode only)
+
+SNIPPETS                                        *timestamp-notes-snippets*
+
+The following snippets are available in markdown files:
+
+ts<Tab>
+    Inserts current timestamp (YYYYMMDD.HHMMSS)
+
+tsn<Tab>
+    Inserts full timestamped note template
+
+FILE FORMAT                                     *timestamp-notes-format*
+
+Generated files follow this format:
+    YYYYMMDD.HHMMSS.md         (for blank notes)
+    YYYYMMDD.HHMMSS_title.md   (for notes from selection)
+
+Each file contains:
+    # Title
+    Created: YYYY-MM-DD HH:MM:SS
+    Tags: 
+
+    ---
+
+    [Content]
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,60 @@
+[preview]
+# Show image previews using kitty graphics protocol (Ghostty supports this)
+image = { enable = true, method = "kitty" }
+# Optimized for performance with many images
+# max_width  = 1200
+max_height = 800
+# Cache settings to improve performance - enable caching
+cache_dir = "~/.cache/yazi"
+# Skip previews for files larger than 10MB
+skip_size = 10485760
+# Stop trying to preview after 500ms timeout
+timeout = 500000
+
+[mgr]
+# Layout configuration 
+ratio = [2, 2, 4]  # Custom layout with equal left/middle columns and larger preview
+linemode = "mtime"
+tab_size = 4
+# Default opener configurations
+[opener]
+play = [
+       { run = 'mpv "$@"', orphan = true, for = "unix" },
+	{ run = '"C:\Program Files\mpv.exe" %*', orphan = true, for = "windows" },
+]
+
+
+edit = [
+	{ run = 'vim "$@"', block = true, for = "unix" },
+	{ run = "%EDITOR% %*",  block = true, for = "windows" },
+]
+open = [
+	{ run = 'open "$@"',  desc = "Open with system default application", for = "macos"},
+	{ run = 'vim "$@"', block = true, desc = "Edit in vim", for = "macos" }
+]
+
+[plugin]
+# Disabled mactag for performance - it queries macOS tags on every file
+# [[plugin.prepend_fetchers]]
+# id   = "mactag"
+# name = "*"
+# run  = "mactag"
+# 
+# [[plugin.prepend_fetchers]]
+# id   = "mactag"
+# name = "*/"
+# run  = "mactag"
+
+append_previewers = []
+# If necessary, you can extend preview capabilities with additional plugins
+prepend_previewers = [
+ { mime = "audio/*", run = "audio-preview" }, 
+ # { name = "*.md", run = "glow" },  # Disabled for faster native preview
+ { mime = "application/pdf", run = "pdf-preview" },
+]
+prepend_preloaders = [ 
+ { mime = "audio/*", run = "audio-preview" }, 
+]
+
+prepend = ["pandoc-preview", "docx-preview"]
+

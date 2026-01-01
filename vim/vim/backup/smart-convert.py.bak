@@ -1,0 +1,153 @@
+import os
+import re
+import json
+
+INPUT_DIR = "."
+OUTPUT_DIR = "./"
+LOG_FILE = "conversion_log.txt"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+processed = 0
+failed = 0
+
+log = open(LOG_FILE, "w", encoding="utf-8")
+
+def extract_json_block(text):
+    """
+    Extracts { ... } from ```json ... ```
+    """
+    code_block = re.search(r"```json(.*?)```", text, re.S)
+    if not code_block:
+        return None
+
+    inner = code_block.group(1)
+
+    # Remove surrounding whitespace
+    inner = inner.strip()
+
+    try:
+        return json.loads(inner)
+    except:
+        # Try repairing JSON
+        inner2 = inner.replace("\n", " ")
+        inner2 = re.sub(r",\s*}", "}", inner2)
+        inner2 = re.sub(r",\s*]", "]", inner2)
+
+        try:
+            return json.loads(inner2)
+        except Exception:
+            return None
+
+
+def extract_value(label, text):
+    """
+    Extracts values like:
+    id: 519170
+    original_file: something.md
+    """
+    pattern = rf"{label}\s*:\s*(.+)"
+    match = re.search(pattern, text)
+    if not match:
+        return ""
+
+    val = match.group(1).strip()
+
+    # remove commas at end
+    if val.endswith(","):
+        val = val[:-1]
+
+    # remove quotes
+    val = val.replace('"', "").replace("'", "")
+
+    return val
+
+
+def extract_content(text):
+    # Find start after "content:"
+    start = text.find("content:")
+    if start == -1:
+        return ""
+
+    return text[start + len("content:"):].strip()
+
+
+def process_file(filepath):
+    global processed, failed
+
+    try:
+        raw = open(filepath, "r", encoding="utf-8", errors="ignore").read()
+    except Exception as e:
+        log.write(f"READ ERROR → {filepath} | {str(e)}\n")
+        failed += 1
+        return
+
+    model_json = extract_json_block(raw)
+
+    if not model_json:
+        log.write(f"NO JSON BLOCK → {filepath}\n")
+        failed += 1
+        return
+
+    id_ = extract_value("id", raw)
+    orig_file = extract_value("original_file", raw)
+    content = extract_content(raw)
+
+    category = model_json.get("category", "unknown")
+    tag = model_json.get("tag", "")
+    sub_topic = model_json.get("sub_topic", "")
+    keywords = model_json.get("keywords", [])
+
+    filename = f"{category}-{id_}.md"
+    filename = filename.replace(" ", "-").replace("/", "-")
+
+    output_path = os.path.join(OUTPUT_DIR, filename)
+
+    with open(output_path, "w", encoding="utf-8") as out:
+        out.write("---\n")
+        out.write(f"id: {id_}\n")
+        out.write(f"category: {category}\n")
+        out.write(f"tag: {tag}\n")
+        out.write(f"sub_topic: {sub_topic}\n")
+        out.write("keywords:\n")
+        for k in keywords:
+            out.write(f"  - {k}\n")
+        out.write(f"original_file: {orig_file}\n")
+        out.write("---\n\n")
+
+        out.write("# Note\n\n")
+        out.write(content.strip() + "\n")
+
+    processed += 1
+    print(f"✔ Converted → {filename}")
+
+
+def main():
+    global processed, failed
+
+    files = [
+        os.path.join(INPUT_DIR, f)
+        for f in os.listdir(INPUT_DIR)
+        if f.endswith(".json") and not f.startswith("._")
+    ]
+
+    print(f"🔍 Found {len(files)} initial files\n")
+
+    for file in files:
+        process_file(file)
+
+    log.write("\n===== SUMMARY =====\n")
+    log.write(f"Converted successfully = {processed}\n")
+    log.write(f"Failed = {failed}\n")
+
+    log.close()
+
+    print("\n🏁 DONE")
+    print(f"✨ Converted: {processed}")
+    print(f"❌ Failed: {failed}")
+    print(f"📄 Review log: {LOG_FILE}")
+
+
+if __name__ == "__main__":
+    main()
+

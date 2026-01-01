@@ -1,0 +1,372 @@
+" zet.vim - Zettelkasten note-taking plugin for Vim
+" Maintainer: Your Name
+" Version: 1.0.2 (Optimized for Ripgrep/rg)
+
+" -----------------------------------------------------------------------------
+" 1. Initialization Guard and Configuration
+" -----------------------------------------------------------------------------
+if exists('g:loaded_zet')
+  finish
+endif
+let g:loaded_zet = 1
+
+" Configuration Defaults
+let g:zet_directory = get(g:, 'zet_directory', expand('~/zet'))
+let g:zet_extension = get(g:, 'zet_extension', '.md')
+let g:zet_link_format = get(g:, 'zet_link_format', '[[%s | %s]]')
+let g:zet_date_format = get(g:, 'zet_date_format', '%Y-%m-%d %H:%M:%S')
+
+" Script-local variable to store the cursor position for link insertion
+let s:insert_col = -1
+
+" -----------------------------------------------------------------------------
+" 2. Utility Functions
+" -----------------------------------------------------------------------------
+
+function! zet#init() abort
+  " Ensures the Zettelkasten directory exists.
+  let dir = expand(g:zet_directory)
+  if !isdirectory(dir)
+    call mkdir(dir, 'p')
+    echo 'Created zet directory: ' . dir
+  endif
+endfunction
+
+function! zet#generate_id() abort
+  " Generates a base ID using the current date and time (YYYYMMDD.HHMM).
+  return strftime('%Y%m%d.%H%M')
+endfunction
+
+function! zet#get_filepath(id) abort
+  " Constructs the full file path for a note from its ID.
+  return expand(g:zet_directory) . '/' . a:id . g:zet_extension
+endfunction
+
+function! zet#generate_unique_id() abort
+  " Generates a unique, non-clashing ID.
+  let base_id = zet#generate_id()
+  let id = base_id
+  let counter = 1
+  while filereadable(zet#get_filepath(id))
+    " Use 'a', 'b', 'c', etc. for the first 26 conflicts
+    if counter <= 26
+        let id = base_id . nr2char(char2nr('a') + counter - 1)
+    " Use '-1', '-2', etc. for subsequent conflicts
+    else
+        let id = base_id . '-' . string(counter - 26)
+    endif
+    let counter += 1
+
+    " Guardrail against excessive conflicts
+    if counter > 100
+      echoerr 'Unable to generate unique ID'
+      return ''
+    endif
+  endwhile
+  return id
+endfunction
+
+function! zet#make_link(id, title) abort
+  " Formats a note link using the configured g:zet_link_format.
+  return printf(g:zet_link_format, a:id, a:title)
+endfunction
+
+function! zet#parse_link(text) abort
+  " Parses a link string (e.g., '[[ID | Title]]') into its ID and Title.
+  let pattern = '\[\[\s*\([^|]\+\)\s*|\s*\([^\]]\+\)\s*\]\]'
+  let match = matchlist(a:text, pattern)
+  if empty(match)
+    return {}
+  endif
+  return {'id': trim(match[1]), 'title': trim(match[2])}
+endfunction
+
+" -----------------------------------------------------------------------------
+" 3. Note Creation Functions
+" -----------------------------------------------------------------------------
+
+function! zet#new(title) abort
+  " Creates and opens a new note with YAML front matter.
+  call zet#init()
+  let id = zet#generate_unique_id()
+  if empty(id)
+    return ''
+  endif
+  let filepath = zet#get_filepath(id)
+  execute 'edit' fnameescape(filepath)
+  let timestamp = strftime(g:zet_date_format)
+  
+  " Insert YAML front matter and H1 title
+  call append(0, [
+        \ '---',
+        \ 'id: ' . id,
+        \ 'title: ' . a:title,
+        \ 'created: ' . timestamp,
+        \ 'tags: []',
+        \ '---',
+        \ '',
+        \ '# ' . a:title,
+        \ ''
+        \ ])
+  normal! G
+  silent update
+  return id
+endfunction
+
+function! zet#make_new_note() abort
+  " Creates a new note from the visually selected text and replaces selection with a link.
+  let save_reg = @z
+  normal! gv"zy " Yank selected text into register 'z'
+  let title = @z
+  let @z = save_reg " Restore original register 'z' contents
+  
+  " Clean up title text
+  let title = substitute(title, '^\s\+', '', '')
+  let title = substitute(title, '\s\+$', '', '')
+  let title = substitute(title, '\n', ' ', 'g')
+  
+  if empty(title)
+    echohl ErrorMsg
+    echo 'Selected text is empty'
+    echohl None
+    return
+  endif
+  
+  let id = zet#new(title)
+  if empty(id)
+    return
+  endif
+  
+  let link = zet#make_link(id, title)
+  " Replace the visual selection with the new link
+  execute "normal! gv\"_c" . link . "\<Esc>"
+  echo 'Created note: ' . id
+endfunction
+
+" -----------------------------------------------------------------------------
+" 4. Search and Link Management (RG Exclusive)
+" -----------------------------------------------------------------------------
+
+function! zet#link() abort
+  " Prepares for link insertion by saving the column and calling the search.
+  let s:insert_col = col('.')
+  call feedkeys("\<Plug>(zet-search-note-internal)")
+  return ''
+endfunction
+
+function! zet#search_note() abort
+  " Uses FZF (via fzf#vim#rg) to search for note titles. Requires 'rg'.
+  call zet#init()
+  if !executable('rg')
+    echohl ErrorMsg
+    echo 'ripgrep (rg) required for note search. Install ripgrep.'
+    echohl None
+    return
+  endif
+  
+  let dir = expand(g:zet_directory)
+  let pattern = '^# '
+  let spec = {
+        \ 'sink': function('zet#link_handler'),
+        \ 'options': '--prompt "Link to note: "',
+        \ 'dir': dir
+        \ }
+  " Use fzf#vim#rg instead of fzf#vim#ag
+  call fzf#vim#rg(pattern, dir, spec)
+endfunction
+
+function! zet#link_handler(result) abort
+  " Handles the selected note from the search, inserts the link, and resets the cursor.
+  if empty(a:result)
+    let s:insert_col = -1
+    return
+  endif
+  
+  let parts = split(a:result, ':')
+  if len(parts) < 4
+    echohl ErrorMsg
+    echo 'Invalid search result format'
+    echohl None
+    let s:insert_col = -1
+    return
+  endif
+  
+  let filepath = parts[0]
+  let filename = fnamemodify(filepath, ':t:r')
+  " Rejoin parts[3:] in case the title contains colons
+  let title = substitute(join(parts[3:], ':'), '^\s*#\s*', '', '')
+  let title = trim(title)
+  
+  let current_line = getline('.')
+  let pos = s:insert_col == -1 ? col('.') - 1 : s:insert_col - 1
+  let link = zet#make_link(filename, title)
+  
+  let new_line = (pos > 0 ? current_line[:pos-1] : '') . link . current_line[pos:]
+  call setline('.', new_line)
+  
+  call cursor(line('.'), pos + len(link))
+  let s:insert_col = -1
+  
+  if mode() ==# 'i'
+    call feedkeys("\<Right>", 'n')
+  else
+    startinsert!
+  endif
+endfunction
+
+function! zet#follow_link() abort
+  " Finds the link under the cursor and opens the linked file.
+  let line = getline('.')
+  let col = col('.')
+  let pattern = '\[\[\s*\([^|]\+\)\s*|\s*\([^\]]\+\)\s*\]\]'
+  let start = 0
+  
+  while 1
+    let match_pos = match(line, pattern, start)
+    if match_pos == -1
+      break
+    endif
+    let match_end = matchend(line, pattern, start)
+    
+    if match_pos < col && col <= match_end
+      let link_text = matchstr(line, pattern, start)
+      let link = zet#parse_link(link_text)
+      
+      if !empty(link)
+        let filepath = zet#get_filepath(link.id)
+        if filereadable(filepath)
+          execute 'edit' fnameescape(filepath)
+        else
+          echohl WarningMsg
+          echo 'Note not found: ' . link.id
+          echohl None
+        endif
+      endif
+      return
+    endif
+    let start = match_end
+  endwhile
+  
+  echohl WarningMsg
+  echo 'No link under cursor'
+  echohl None
+endfunction
+
+function! zet#references() abort
+  " Searches the Zettelkasten for notes that link to the current note (backlinks).
+  call zet#init()
+  let current_id = expand('%:t:r')
+  
+  if !executable('rg')
+    echohl ErrorMsg
+    echo 'ripgrep (rg) required for references.'
+    echohl None
+    return
+  endif
+  
+  let dir = expand(g:zet_directory)
+  let pattern = '\[\[' . current_id . '\s*|'
+  " Use Rg instead of Ag
+  execute 'Rg ' . shellescape(pattern) . ' ' . fnameescape(dir)
+endfunction
+
+function! zet#search_all() abort
+  " Uses fzf.vim's Files command to fuzzy-find all notes in the directory.
+  call zet#init()
+  if !exists(':Files')
+    echohl ErrorMsg
+    echo 'fzf.vim required.'
+    echo 'Install fzf and fzf.vim.'
+    echohl None
+    return
+  endif
+  execute 'Files' expand(g:zet_directory)
+endfunction
+
+function! zet#grep(query) abort
+  " Performs a general content search across all notes using Rg.
+  call zet#init()
+  if !executable('rg')
+    echohl ErrorMsg
+    echo 'ripgrep (rg) required for grep.'
+    echohl None
+    return
+  endif
+  let dir = expand(g:zet_directory)
+  " Use Rg instead of Ag
+  execute 'Rg' shellescape(a:query) fnameescape(dir)
+endfunction
+
+function! zet#tags() abort
+  " Searches for all 'tags:' declarations across all notes using Rg.
+  call zet#init()
+  if !executable('rg')
+    echohl ErrorMsg
+    echo 'ripgrep (rg) required for tags.'
+    echohl None
+    return
+  endif
+  let dir = expand(g:zet_directory)
+  " Use Rg instead of Ag
+  execute 'Rg "^tags:.*"' fnameescape(dir)
+endfunction
+
+function! zet#complete_link(findstart, base) abort
+  " Omni-completion function for note links.
+  if a:findstart
+    let line = getline('.')
+    let start = col('.') - 1
+    while start > 0 && line[start - 1] !=# '['
+      let start -= 1
+    endwhile
+    return start
+  else
+    " Collects all note IDs and Titles for completion suggestions.
+    let notes = []
+    let dir = expand(g:zet_directory)
+    let files = glob(dir . '/*' . g:zet_extension, 0, 1)
+    
+    for file in files
+      let id = fnamemodify(file, ':t:r')
+      let title = ''
+      
+      " Read up to 20 lines to find the H1 title line
+      if filereadable(file)
+        for line in readfile(file, '', 20)
+          if line =~# '^#\s'
+            let title = substitute(line, '^#\s*', '', '')
+            break
+          endif
+        endfor
+      endif
+      
+      " Only suggest notes where the title matches the base text
+      if !empty(title) && title =~? a:base
+        call add(notes, {
+              \ 'word': zet#make_link(id, title),
+              \ 'abbr': title,
+              \ 'menu': '[' . id . ']'
+              \ })
+      endif
+    endfor
+    return notes
+  endif
+endfunction
+
+" -----------------------------------------------------------------------------
+" 5. User Commands and Mappings
+" -----------------------------------------------------------------------------
+
+command! -nargs=1 ZetNew call zet#new(<q-args>)
+command! -nargs=0 ZetLink call zet#search_note()
+command! -nargs=0 ZetFollow call zet#follow_link()
+command! -nargs=0 ZetReferences call zet#references()
+command! -nargs=0 ZetSearch call zet#search_all()
+command! -nargs=1 ZetGrep call zet#grep(<q-args>)
+command! -nargs=0 ZetTags call zet#tags()
+command! -nargs=0 ZetInit call zet#init()
+
+inoremap <Plug>(zet-search-note-internal) <c-o>:call zet#search_note()<cr>
+imap <expr> <Plug>(zet-link) zet#link()
+xnoremap <Plug>(zet-make-new-note) :<c-u>call zet#make_new_note()<cr>
+nnoremap <Plug>(zet-follow-link) :call zet#follow_link()<cr>

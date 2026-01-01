@@ -1,0 +1,58 @@
+[preview]
+# Show image previews using chafa
+image = { enable = true, method = "chafa" }
+# Change them to your desired values - reduced for better layout
+max_width  = 1200
+max_height = 800
+
+[preview.chafa]
+# Configure chafa to generate good image previews
+scale = 1
+size.width = 12
+size.height = 8
+colors.mode = "8"
+
+[mgr]
+# Layout configuration 
+ratio = [2, 2, 4]  # Custom layout with equal left/middle columns and larger preview
+linemode = "mtime"
+tab_size = 4
+
+# Default opener configurations
+[opener]
+play = [
+	{ run = 'mpv "$@"', orphan = true, for = "unix" },
+	{ run = '"C:\Program Files\mpv.exe" %*', orphan = true, for = "windows" }
+]
+edit = [
+	{ run = 'nvim "$@"', block = true, for = "unix" },
+	{ run = "%EDITOR% %*",  block = true, for = "windows" },
+]
+open = [
+	{ run = 'open "$@"',  desc = "Open with system default application", for = "macos"},
+	{ run = 'nvim "$@"', block = true, desc = "Edit in nvim", for = "macos" }
+]
+
+[plugin]
+[[plugin.prepend_fetchers]]
+id   = "mactag"
+name = "*"
+run  = "mactag"
+
+[[plugin.prepend_fetchers]]
+id   = "mactag"
+name = "*/"
+run  = "mactag"
+
+append_previewers = []
+# If necessary, you can extend preview capabilities with additional plugins
+prepend_previewers = [
+ { mime = "audio/*", run = "audio-preview" }, 
+ { name = "*.md", run = "glow" },
+ { mime = "application/pdf", run = "pdf-preview" },
+]
+prepend_preloaders = [ 
+ { mime = "audio/*", run = "audio-preview" }, 
+]
+
+

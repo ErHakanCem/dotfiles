@@ -1,0 +1,17 @@
+Analyze the note below and return ONLY valid JSON with this exact structure:
+
+{
+  "CategoryID": "CATEGORY-TAGS-ID",
+  "CoreTheme": "1-2 sentence summary",
+  "KeyConcepts": ["concept1", "concept2", "concept3"],
+  "OriginalContent": "full raw input text"
+}
+
+CategoryID format:
+- CATEGORY: programming,architecture, urbanism, design, health, philosophy, politics, economics, literature, tasks, art, language
+- TAGS: code, poem, idea, memories, project, question
+- ID: random 6-digit number
+- Example: philosophy-personal-908734
+
+Input Note:
+

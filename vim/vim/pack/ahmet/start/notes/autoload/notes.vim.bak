@@ -1,0 +1,65 @@
+function! notes#new(name) " {
+  " Create timestamp-based ID instead of UUID
+  " Format: YYYYMMDD.HHMMSS  → 20251016.145512
+" Set default notes directory
+  let notes_dir = expand('~/my-self/writing/zets')
+  let id = strftime("%Y%m%d.%H%M%S")
+  let file = id . '.md'
+
+  " If filename already exists (unlikely), retry
+  if filereadable(file)
+    call notes#new(a:name)
+  endif
+
+  execute 'e ' . file
+  call append(0, '# ' . a:name)
+  silent update
+  return id
+endfunction " }
+
+function! notes#make_new_note() " {
+  normal! gv"zy
+  let id = notes#new(@z)
+  let @z = notes#make_link(id, @z)
+  echo @z
+  normal! gv"zP%w
+endfunction " }
+
+inoremap <Plug>(notes-search-note) <c-o>:call notes#search_note()<cr>
+
+let s:icol = -1
+
+function! notes#link() " {
+  let s:icol = col('.')
+  call feedkeys("\<Plug>(notes-search-note)")
+  return ''
+endfunction " }
+
+function! notes#search_note() " {
+  call fzf#vim#ag('^# ', '', {'sink': function('notes#link_handler')})
+endfunction " }
+
+function! notes#link_handler(result) " {
+  let parts = split(a:result, ':')
+  let file = substitute(parts[0], '.md$', '', '')
+  let line = parts[1]
+  let column = parts[2]
+  let title = substitute(join(parts[3:], ':'), '^# ', '', '')
+
+  let currentLine = getline('.')
+  let pos = s:icol == -1 ? col('.') - 1 : s:icol - 1
+
+  let link = notes#make_link(file, title)
+
+  let line = (pos > 0 ? currentLine[:pos-1] : '') . link . currentLine[pos:]
+  call setline('.', line)
+  call cursor(line('.'), pos + len(link))
+
+  let s:icol = -1
+  call feedkeys('a', 'n')
+endfunction " }
+
+function! notes#make_link(id, title) " {
+  return '[[' . a:id . ' | ' . a:title . ']]'
+endfunction " }
+

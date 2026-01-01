@@ -1,0 +1,70 @@
+import json
+import os
+import yaml
+
+# --- CONFIGURATION ---
+JSON_DIR = "./output.json"
+OBSIDIAN_DIR = "./obsidian_covert"
+
+# Create the target directory
+os.makedirs(OBSIDIAN_DIR, exist_ok=True)
+
+print(f"Starting conversion from {JSON_DIR} to Obsidian files in {OBSIDIAN_DIR}...")
+print("-" * 50)
+
+# Loop through all JSON files
+for filename in os.listdir(JSON_DIR):
+    if filename.endswith(".json"):
+        json_path = os.path.join(JSON_DIR, filename)
+
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # 1. Prepare YAML Frontmatter (Properties)
+            category_parts = data['CategoryID'].split('-')
+            
+            frontmatter = {
+                'title': data['NewTitle'],
+                # Map the parts of the CategoryID for easy DataView querying
+                'category': category_parts[0],
+                'subtopic': category_parts[1],
+                'id': category_parts[2],
+                'tone': data['SourceTone'],
+                'concepts': data['KeyConcepts'],
+                # Create Obsidian tags from the Category/Subtopic
+                'tags': [f"#{category_parts[0]}", f"#{category_parts[1]}"]
+            }
+
+            # 2. Convert Frontmatter to YAML string
+            # The 'sort_keys=False' ensures a cleaner, human-readable order
+            yaml_header = yaml.dump(frontmatter, sort_keys=False, default_flow_style=False)
+
+            # 3. Assemble the final Markdown content
+            
+            # --- YAML Header Block ---
+            markdown_content = f"---\n{yaml_header}---"
+            
+            # --- Main Content (Synthesis and Original) ---
+            markdown_content += "\n\n"
+            markdown_content += f"## Core Theme\n"
+            markdown_content += f"**Synthesis:** {data['CoreTheme']}\n\n"
+            markdown_content += "---\n\n"
+            markdown_content += f"## Original Note Content\n"
+            markdown_content += f"{data['OriginalContent']}\n"
+            
+            # 4. Define the final output filename (use the clean CategoryID)
+            output_filename = f"{data['CategoryID']}.md"
+            output_path = os.path.join(OBSIDIAN_DIR, output_filename)
+
+            # 5. Save the file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+
+            print(f"  [CONVERTED] {filename} -> {output_filename}")
+
+        except Exception as e:
+            print(f"  [ERROR] Failed to process {filename}: {e}")
+
+print("-" * 50)
+print("Conversion complete. Your Obsidian notes are ready in the 'obsidian_notes' folder.")

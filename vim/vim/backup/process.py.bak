@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+# process.py - full pipeline for PDF -> Obsidian metadata
+# Uses: PyMuPDF (fitz), pypdf (for a quick test), pytesseract, ollama, datasketch, rapidfuzz
+
+import argparse
+import json
+import re
+import os
+import io
+import sys
+import time
+import hashlib
+import logging
+import unicodedata
+from pathlib import Path
+from multiprocessing import Pool, cpu_count
+
+# Third-party libs (may raise ImportError if not installed)
+try:
+    import fitz  # PyMuPDF
+except Exception as e:
+    print("ERROR: PyMuPDF (fitz) is required. pip install pymupdf")
+    raise
+
+try:
+    from pypdf import PdfReader
+except Exception:
+    PdfReader = None  # optional: only used by test-extract
+
+try:
+    import pytesseract
+    from PIL import Image
+except Exception:
+    pytesseract = None
+    Image = None
+
+try:
+    import ollama
+except Exception:
+    ollama = None
+
+try:
+    from datasketch import MinHash, MinHashLSH
+except Exception:
+    MinHash = None
+    MinHashLSH = None
+
+try:
+    from rapidfuzz import fuzz
+except Exception:
+    fuzz = None
+
+try:
+    import yaml as pyyaml
+except Exception:
+    pyyaml = None
+
+# ---------- Configuration ----------
+ROOT = Path(__file__).parent.resolve()
+INPUT = ROOT / "input_pdfs"
+EXTRACTED = ROOT / "extracted_text"
+OLLAMA_OUT = ROOT / "ollama_outputs"
+OBSIDIAN = ROOT / "obsidian_notes"
+AUDIT = ROOT / "audit_logs"
+RENAMED = ROOT / "renamed_pdfs"
+CONFIG = ROOT / "config.yaml"
+PROMPT_FILE = ROOT / "ollama_prompt_template.txt"
+
+# Default model (user selected option A earlier)
+LLM_MODEL = "gemma:latest"
+
+# Parallel workers for LLM (safe default for M4 16GB)
+DEFAULT_WORKERS = min(3, max(1, cpu_count()))
+
+# Logging
+LOG_FILE = AUDIT / "errors.log"
+AUDIT.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    filename=str(LOG_FILE),
+    filemode="a",
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+# ISBN regex
+ISBN_REGEX = re.compile(
+    r"\b(?:ISBN(?:-1[03])?:?\s*)?((97[89][-\s]?\d{1,5}[-\s]?\d{1,7}[-\s]?\d{1,7}[-\s]?\d)|((?:\d[-\s]?){9}[\dXx]))\b",
+    flags=re.IGNORECASE
+)
+
+# Ensure directories exist
+def ensure_dirs():
+    for p in [INPUT, EXTRACTED, OLLAMA_OUT, OBSIDIAN, AUDIT, RENAMED]:
+        p.mkdir(parents=True, exist_ok=True)
+
+# ---------- Utilities ----------
+def log(msg, level="info"):
+    print(msg)
+    if level == "warning":
+        logging.warning(msg)
+    elif level == "error":
+        logging.error(msg)
+    else:
+        logging.info(msg)
+
+def slugify(text, max_length=60):
+    if not text:
+        return None
+    text = unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode()
+    text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9\s-]", "", text)
+    text = re.sub(r"\s+", "-", text)
+    text = re.sub(r"-+", "-", text)
+    text = text.strip("-")
+    return text[:max_length]
+
+def file_hash(path, algo="sha256"):
+    h = hashlib.new(algo)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def extract_isbns(text):
+    matches = ISBN_REGEX.findall(text or "")
+    cleaned = []
+    for match in matches:
+        isbn = match[0].replace("-", "").replace(" ", "")
+        cleaned.append(isbn)
+    return list(dict.fromkeys(cleaned))  # preserve order but unique
+
+# ---------- Task 1 (quick test) ----------
+def test_pdf_extraction():
+    """Quick test using pypdf to check which PDFs are parseable."""
+    ensure_dirs()
+    if PdfReader is None:
+        print("pypdf not installed; install with: pip install pypdf")
+        return
+
+    input_dir = INPUT
+    log("=== New extraction test run ===")
+    for pdf_path in sorted(input_dir.glob("*.pdf")):
+        try:
+            reader = PdfReader(str(pdf_path))
+            if getattr(reader, "is_encrypted", False):
+                log(f"Encrypted PDF: {pdf_path.name}", "warning")
+                print(f"🔴 Encrypted: {pdf_path.name}")
+                continue
+
+            text = ""
+            for page in reader.pages[:2]:
+                try:
+                    text += page.extract_text() or ""
+                except Exception:
+                    pass
+
+            if not text.strip():
+                log(f"Image-only or empty text PDF: {pdf_path.name}", "warning")
+                print(f"🟠 Image-only / No text: {pdf_path.name}")
+            else:
+                log(f"Success: {pdf_path.name}")
+                print(f"🟢 OK: {pdf_path.name} (text extracted)")
+
+        except Exception as e:
+            log(f"Error with {pdf_path.name}: {e}", "error")
+            print(f"🔴 Error: {pdf_path.name}: {e}")
+
+    print("\nDone. Check", LOG_FILE)
+
+# ---------- Task 2 extraction (PyMuPDF) ----------
+def safe_extract_pdf(pdf_path):
+    """Use PyMuPDF to extract: metadata, first pages, last pages, text flag, page_count."""
+    result = {
+        "filename": pdf_path.name,
+        "embedded_metadata": {},
+        "first_pages": "",
+        "last_pages": "",
+        "text": "",
+        "isbn_candidates": [],
+        "is_image_only": False,
+        "page_count": 0,
+        "error": None
+    }
+    try:
+        doc = fitz.open(str(pdf_path))
+        result["page_count"] = len(doc)
+
+        # metadata
+        try:
+            meta = doc.metadata or {}
+            result["embedded_metadata"] = meta
+        except Exception:
+            result["embedded_metadata"] = {}
+
+        # first 3 pages
+        for i in range(min(3, len(doc))):
+            page = doc[i]
+            text = page.get_text("text") or ""
+            result["first_pages"] += text
+
+        # last 2 pages
+        for i in range(max(0, len(doc) - 2), len(doc)):
+            page = doc[i]
+            result["last_pages"] += page.get_text("text") or ""
+
+        # whole text (used for MinHash/dedupe)
+        full_text = []
+        image_pages = 0
+        for page in doc:
+            ptext = page.get_text("text") or ""
+            full_text.append(ptext)
+            if not ptext.strip() and page.get_images():
+                image_pages += 1
+
+        combined_text = "\n".join(full_text).strip()
+        result["text"] = combined_text
+
+        # determine image-only heuristics
+        if (not result["first_pages"].strip() and not result["last_pages"].strip()) and (image_pages > 0 and len(combined_text) < 50):
+            result["is_image_only"] = True
+
+        # isbn candidates from first + last pages
+        result["isbn_candidates"] = extract_isbns(result["first_pages"] + "\n" + result["last_pages"])
+
+        doc.close()
+    except Exception as e:
+        result["error"] = str(e)
+        logging.warning(f"safe_extract_pdf failed: {pdf_path.name} | {e}")
+    return result
+
+# ---------- OCR ----------
+def ocr_pdf(pdf_path, dpi=300):
+    """Render PDF pages to images and OCR with Tesseract (pytesseract)."""
+    if pytesseract is None or Image is None:
+        logging.warning("pytesseract / Pillow not installed. OCR unavailable.")
+        return ""
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        out_text = []
+        for page in doc:
+            pix = page.get_pixmap(dpi=dpi)
+            img_bytes = pix.tobytes("png")
+            img = Image.open(io.BytesIO(img_bytes))
+            page_text = pytesseract.image_to_string(img)
+            out_text.append(page_text)
+        doc.close()
+        return "\n".join(out_text).strip()
+    except Exception as e:
+        logging.warning(f"OCR failed for {pdf_path.name}: {e}")
+        return ""
+
+def extract_with_ocr_support(pdf_path):
+    """Run safe_extract_pdf, and if scanned/image-only, run OCR and update fields."""
+    data = safe_extract_pdf(pdf_path)
+    if data.get("is_image_only") or (len(data.get("text","").strip()) < 40 and data.get("page_count",0) > 0):
+        logging.info(f"OCR needed for {pdf_path.name}")
+        ocr_text = ocr_pdf(pdf_path)
+        if ocr_text and len(ocr_text.strip()) > 30:
+            # populate first/last/text fields with OCR output
+            data["text"] = ocr_text
+            # also split a bit for first/last approximations
+            lines = [l for l in ocr_text.splitlines() if l.strip()]
+            data["first_pages"] = "\n".join(lines[:50])
+            data["last_pages"] = "\n".join(lines[-50:])
+            data["is_image_only"] = False
+            data["isbn_candidates"] = extract_isbns(data["first_pages"] + "\n" + data["last_pages"])
+        else:
+            logging.warning(f"OCR produced little text for {pdf_path.name}")
+    return data
+
+# ---------- Extraction run ----------
+def run_extraction():
+    ensure_dirs()
+    pdfs = sorted(INPUT.glob("*.pdf"))
+    if not pdfs:
+        print("No PDFs found in input_pdfs/.")
+        return
+    print(f"📘 Starting extraction for {len(pdfs)} PDFs...\n")
+    for pdf in pdfs:
+        print(f"→ Extracting: {pdf.name}")
+        result = safe_extract_pdf(pdf)
+        out_path = EXTRACTED / f"{pdf.stem}.json"
+        out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        if result.get("error"):
+            print(f"   ❌ Error: {result['error']}")
+        elif result.get("is_image_only"):
+            print("   ⚠️  Image-only / No text found")
+        else:
+            print("   ✅ Text extracted")
+    print("\n✔ Extraction completed.")
+    print("Check extracted_text/ directory.")
+
+# ---------- LLM integration ----------
+def load_prompt_template():
+    if not PROMPT_FILE.exists():
+        raise FileNotFoundError(f"Prompt template not found: {PROMPT_FILE}")
+    return PROMPT_FILE.read_text(encoding="utf-8")
+
+def run_llm_on_json_single(data, model=LLM_MODEL, temperature=0):
+    """Call ollama.chat for one JSON object and return text (YAML) or None."""
+    if ollama is None:
+        logging.error("ollama client not installed (pip install ollama).")
+        return None
+
+    prompt_template = load_prompt_template()
+    # Build JSON compact
+    input_json = json.dumps(data, indent=2, ensure_ascii=False)
+    prompt = f"{prompt_template}\n\nINPUT_JSON:\n{input_json}"
+
+    try:
+        resp = ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": temperature}
+        )
+        # Ollama returns dict-like; try to access content robustly
+        # Varies slightly by Ollama version; handle common keys:
+        if isinstance(resp, dict):
+            # new API: {'message': {'role':..., 'content': '...'}}
+            if "message" in resp and isinstance(resp["message"], dict):
+                return resp["message"].get("content")
+            # older might return 'content' directly
+            return resp.get("content")
+        # fallback: string
+        return str(resp)
+    except Exception as e:
+        logging.warning(f"LLM call failed for {data.get('filename')}: {e}")
+        return None
+
+# Worker wrapper for multiprocessing - will call run_llm_on_json_single
+def llm_worker(json_path_str):
+    json_path = Path(json_path_str)
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return f"❌ Failed load JSON: {json_path.name} | {e}"
+
+    # skip if error or image-only
+    if data.get("error") or data.get("is_image_only"):
+        return f"⚠️ Skipped: {json_path.name} (error/image-only)"
+
+    yaml_output = run_llm_on_json_single(data, model=LLM_MODEL, temperature=0)
+    if not yaml_output:
+        logging.warning(f"LLM returned empty for {json_path.name}")
+        return f"❌ LLM failed: {json_path.name}"
+
+    # basic validation: must include 'title:' at least
+    if "title:" not in yaml_output:
+        logging.warning(f"Invalid YAML for {json_path.name}")
+        return f"❌ Invalid YAML: {json_path.name}"
+
+    out_path = OLLAMA_OUT / f"{json_path.stem}.yaml"
+    out_path.write_text(yaml_output, encoding="utf-8")
+    return f"✅ YAML saved: {json_path.name}"
+
+def run_llm_processing(workers=DEFAULT_WORKERS):
+    ensure_dirs()
+    json_files = sorted(EXTRACTED.glob("*.json"))
+    if not json_files:
+        print("No JSON files found. Run --extract first.")
+        return
+
+    # create outputs dir
+    OLLAMA_OUT.mkdir(exist_ok=True)
+
+    print(f"🧠 Running LLM metadata extraction for {len(json_files)} files with {workers} workers...\n")
+
+    # Use multiprocessing pool
+    file_paths = [str(p) for p in json_files]
+    with Pool(processes=workers) as pool:
+        for res in pool.imap_unordered(llm_worker, file_paths):
+            print(res)
+
+    print("\n✔ LLM processing complete. YAML saved in ollama_outputs/")
+
+# ---------- Convert YAML to Obsidian markdown ----------
+def convert_yaml_to_markdown():
+    ensure_dirs()
+    yaml_files = sorted(OLLAMA_OUT.glob("*.yaml"))
+    if not yaml_files:
+        print("No YAML files found. Run --llm first.")
+        return
+
+    print(f"📝 Converting {len(yaml_files)} YAML files to Obsidian markdown...\n")
+    OBSIDIAN.mkdir(exist_ok=True)
+    for yfile in yaml_files:
+        yaml_text = yfile.read_text(encoding="utf-8")
+        # sanitize stem
+        md_name = slugify(yfile.stem, max_length=60) or yfile.stem
+        md_name = md_name.replace("_", "-") + ".md"
+        md_path = OBSIDIAN / md_name
+        # Title line
+        pretty_title = yfile.stem.replace("_", " ").replace("-", " ").strip()
+        md_content = f"{yaml_text}\n\n# {pretty_title}\n\n<!-- PDF link will be added after rename step -->\n"
+        md_path.write_text(md_content, encoding="utf-8")
+        print(f"   ✅ Markdown saved: {md_name}")
+    print("\n✔ Markdown conversion complete.")
+
+# ---------- Rename PDFs ----------
+def rename_pdfs():
+    ensure_dirs()
+    yaml_files = sorted(OLLAMA_OUT.glob("*.yaml"))
+    if not yaml_files:
+        print("No YAML files found. Run --llm first.")
+        return
+
+    RENAMED.mkdir(exist_ok=True)
+    print(f"🔄 Renaming PDFs based on YAML metadata ({len(yaml_files)} files)…\n")
+
+    for y in yaml_files:
+        yaml_data = y.read_text(encoding="utf-8")
+        # naive YAML parsing (safe because we expect simple fields in single-line)
+        title_match = re.search(r"^title:\s*\"?(.*?)\"?\s*$", yaml_data, flags=re.MULTILINE | re.IGNORECASE)
+        topic_match = re.search(r"^main topic:\s*\"?(.*?)\"?\s*$", yaml_data, flags=re.MULTILINE | re.IGNORECASE)
+
+        title = title_match.group(1).strip() if title_match else None
+        topic = topic_match.group(1).strip() if topic_match else None
+
+        if not title or title.lower() == "null" or not topic or topic.lower() == "null":
+            print(f"⚠️ Skipping (missing title/topic): {y.name}")
+            logging.warning(f"Skipping rename, missing title/topic: {y.name}")
+            continue
+
+        title_slug = slugify(title, max_length=40) or "untitled"
+        topic_slug = slugify(topic, max_length=20) or "unknown"
+
+        new_name = f"{topic_slug}-{title_slug}.pdf"
+        original_pdf = INPUT / (y.stem + ".pdf")
+        if not original_pdf.exists():
+            # try searching input folder for a case-insensitive match
+            found = None
+            for candidate in INPUT.glob("*.pdf"):
+                if candidate.stem.lower() == y.stem.lower():
+                    found = candidate
+                    break
+            if found:
+                original_pdf = found
+            else:
+                print(f"❌ Original PDF not found: {y.stem}.pdf")
+                logging.warning(f"Original PDF not found for {y.name}")
+                continue
+
+        target = RENAMED / new_name
+        counter = 2
+        while target.exists():
+            target = RENAMED / f"{topic_slug}-{title_slug}-{counter}.pdf"
+            counter += 1
+
+        try:
+            original_pdf.rename(target)
+            print(f"   ✅ {original_pdf.name} → {target.name}")
+        except Exception as e:
+            logging.error(f"Failed renaming {original_pdf} -> {target}: {e}")
+            print(f"❌ Failed rename: {original_pdf.name} -> {target.name}: {e}")
+            continue
+
+        # update markdown link if exists
+        md_name = slugify(y.stem, max_length=60)
+        if not md_name:
+            md_name = y.stem
+        md_name = (md_name.replace("_", "-") + ".md").lower()
+        md_file = OBSIDIAN / md_name
+        if md_file.exists():
+            md_text = md_file.read_text(encoding="utf-8")
+            pdf_link = f"[PDF File](../renamed_pdfs/{target.name})"
+            updated_md = re.sub(r"<!-- PDF link.*?-->", pdf_link, md_text, flags=re.DOTALL)
+            md_file.write_text(updated_md, encoding="utf-8")
+
+    print("\n✔ PDF renaming finished.")
+    print("Renamed PDFs saved in renamed_pdfs/")
+
+# ---------- Deduplication ----------
+def get_text_fingerprint(text, num_perm=128):
+    if MinHash is None:
+        raise RuntimeError("datasketch not installed (pip install datasketch)")
+    m = MinHash(num_perm=num_perm)
+    tokens = text.lower().split()
+    if not tokens:
+        return None
+    # shingles of 5 words
+    for i in range(0, max(1, len(tokens) - 4)):
+        shingle = " ".join(tokens[i:i+5])
+        m.update(shingle.encode("utf8"))
+    return m
+
+def dedupe_library(similarity_threshold=0.80):
+    ensure_dirs()
+    if MinHash is None:
+        print("datasketch not installed. Install with: pip install datasketch")
+        return
+
+    pdfs = sorted(RENAMED.glob("*.pdf"))
+    if not pdfs:
+        print("No renamed PDFs found. Run --rename first.")
+        return
+
+    print(f"🔍 Running deduplication on {len(pdfs)} renamed PDFs...\n")
+    exact_dupes = []
+    similar_groups = []
+
+    seen_hashes = {}
+    mh_table = {}
+    lsh = MinHashLSH(threshold=similarity_threshold, num_perm=128)
+
+    # Build table
+    for pdf in pdfs:
+        sha = file_hash(pdf, "sha256")
+        if sha in seen_hashes:
+            exact_dupes.append([pdf.name, seen_hashes[sha]])
+            continue
+        seen_hashes[sha] = pdf.name
+
+        json_path = EXTRACTED / (pdf.stem + ".json")
+        if not json_path.exists():
+            continue
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        text = data.get("text", "") or ""
+        if len(text) < 200:
+            continue
+
+        m = get_text_fingerprint(text)
+        if m:
+            mh_table[pdf.name] = m
+            lsh.insert(pdf.name, m)
+
+    # Query LSH
+    visited = set()
+    for name, m in mh_table.items():
+        if name in visited:
+            continue
+        similar = lsh.query(m)
+        similar = sorted([s for s in similar if s != name])
+        if similar:
+            group = [name] + similar
+            for s in group:
+                visited.add(s)
+            similar_groups.append({"group": group})
+
+    report = {
+        "exact_duplicates": exact_dupes,
+        "similar_groups": similar_groups,
+        "counts": {"exact": len(exact_dupes), "similar_groups": len(similar_groups)}
+    }
+    duplicates_path = AUDIT / "duplicates.json"
+    duplicates_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print("✔ Deduplication complete!")
+    print(f"Report saved to {duplicates_path}")
+
+# ---------- CLI ----------
+def main():
+    ensure_dirs()
+
+    parser = argparse.ArgumentParser(description="Book metadata pipeline")
+    parser.add_argument("--list", action="store_true", help="List available actions")
+    parser.add_argument("--test-extract", action="store_true", help="Quick test (pypdf) of PDFs")
+    parser.add_argument("--extract", action="store_true", help="Run PyMuPDF extraction to JSON")
+    parser.add_argument("--ocr", action="store_true", help="Run OCR (re-extract image-only PDFs)")
+    parser.add_argument("--llm", action="store_true", help="Run Ollama LLM on extracted JSON files (parallel)")
+    parser.add_argument("--md", action="store_true", help="Convert YAML output to Obsidian markdown")
+    parser.add_argument("--rename", action="store_true", help="Rename PDFs based on metadata YAML")
+    parser.add_argument("--dedupe", action="store_true", help="Run deduplication on renamed PDFs")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="Number of parallel LLM workers")
+    args = parser.parse_args()
+
+    if args.list:
+        print("Available actions:")
+        print("  --test-extract    Quick test of PDFs (pypdf)")
+        print("  --extract         Extract text & metadata with PyMuPDF to extracted_text/")
+        print("  --ocr             Run OCR on image-only PDFs and refresh extracted_text/")
+        print("  --llm             Run LLM (ollama) to produce YAML (ollama_outputs/)")
+        print("  --md              Convert YAML -> Obsidian markdown (obsidian_notes/)")
+        print("  --rename          Rename PDFs to renamed_pdfs/{topic}-{title}.pdf")
+        print("  --dedupe          Run deduplication (exact + MinHash similarity)")
+        return
+
+    if args.test_extract:
+        test_pdf_extraction()
+        return
+
+    if args.extract:
+        run_extraction()
+        return
+
+    if args.ocr:
+        # Re-extract using OCR support for scanned files
+        pdfs = sorted(INPUT.glob("*.pdf"))
+        if not pdfs:
+            print("No PDFs found in input_pdfs/")
+            return
+        print(f"🔎 Running OCR-aware extraction for {len(pdfs)} PDFs...")
+        for pdf in pdfs:
+            print(f"→ OCR extraction: {pdf.name}")
+            data = extract_with_ocr_support(pdf)
+            out_path = EXTRACTED / f"{pdf.stem}.json"
+            out_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            if data.get("error"):
+                print(f"   ❌ Error: {data['error']}")
+            elif data.get("is_image_only"):
+                print("   ⚠️ Still image-only / little text after OCR")
+            else:
+                print("   ✅ OCR/text extracted")
+        print("\n✔ OCR extraction finished. Re-run --llm to update YAML.")
+        return
+
+    if args.llm:
+        if ollama is None:
+            print("ERROR: ollama Python client not installed (pip install ollama).")
+            return
+        run_llm_processing(workers=args.workers)
+        return
+
+    if args.md:
+        convert_yaml_to_markdown()
+        return
+
+    if args.rename:
+        rename_pdfs()
+        return
+
+    if args.dedupe:
+        dedupe_library()
+        return
+
+    parser.print_help()
+
+if __name__ == "__main__":
+    main()
+    

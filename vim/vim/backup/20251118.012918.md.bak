@@ -1,0 +1,5 @@
+# vim daily note
+````
+" Create a command to open today's daily note
+command! Daily execute 'edit ~/notes/' . strftime('%Y-%m-%d') . '.md'
+```

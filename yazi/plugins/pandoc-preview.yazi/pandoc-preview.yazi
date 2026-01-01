@@ -1,0 +1,28 @@
+#!/bin/bash
+
+file="$1"
+
+case "$file" in
+    *.docx|*.DOCX)
+        pandoc "$file" -t plain 2>/dev/null
+        ;;
+
+    *.rtf|*.RTF)
+        pandoc "$file" -t plain 2>/dev/null
+        ;;
+
+    *.doc|*.DOC)
+        # Use antiword for legacy .doc files
+        antiword "$file" 2>/dev/null
+        ;;
+
+    *.msg|*.MSG)
+        # Convert .msg → .eml → plain
+        msgconvert --outfile - "$file" 2>/dev/null | sed 's/\r$//'
+        ;;
+
+    *)
+        exit 1
+        ;;
+esac
+
